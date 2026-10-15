@@ -8,12 +8,15 @@
  *   show_controls: true      # optional
  *   animation: auto          # auto | always | off — auto follows the OS
  *                            # "reduce motion" setting
+ *   theme: auto              # auto | light | dark — auto follows the HA theme
+ *
+ * Language follows the HA UI language: Ukrainian, Russian, otherwise English.
  *
  * Vanilla JS, no dependencies. Every value comes from the integration's
  * entities; the card only calls select / number / switch services.
  */
 
-const CARD_VERSION = "0.1.1";
+const CARD_VERSION = "0.1.2";
 const INTEGRATION = "eybond_local";
 
 const I18N = {
@@ -43,6 +46,12 @@ const I18N = {
       overload_bypass_enabled: "Overload bypass", overload_restart_enabled: "Restart after overload",
       over_temperature_restart_enabled: "Restart after overheat",
     },
+    options: {
+      battery_type: { AGM: "AGM", Flooded: "Flooded", User: "User-defined" },
+      input_voltage_range: { Appliance: "Appliance (90–280 V)", UPS: "UPS (170–280 V)" },
+    },
+    alarms: { Ok: "OK", "Line fail warning": "Grid lost" },
+    more: "more",
     numbers: {
       battery_bulk_voltage: "Bulk (CV) voltage", battery_float_voltage: "Float voltage",
       battery_cut_off_voltage: "Cut-off voltage", battery_recharge_voltage: "Back to grid at",
@@ -75,6 +84,29 @@ const I18N = {
       overload_bypass_enabled: "Байпас при перегрузке", overload_restart_enabled: "Перезапуск после перегрузки",
       over_temperature_restart_enabled: "Перезапуск после перегрева",
     },
+    options: {
+      battery_type: { AGM: "AGM", Flooded: "Кислотная (жидкий электролит)", User: "Пользовательский" },
+      input_voltage_range: { Appliance: "Бытовой (90–280 В)", UPS: "ИБП (170–280 В)" },
+    },
+    alarms: {
+      Ok: "Норма", "PV loss warning": "Нет PV", "Inverter fault": "Авария инвертора",
+      "Bus over fault": "Перенапряжение шины", "Bus under fault": "Низкое напряжение шины",
+      "Bus soft fail fault": "Сбой плавного пуска шины", "Line fail warning": "Пропала сеть",
+      "Output voltage fault": "Авария выходного напряжения", "Inverter voltage too low fault": "Низкое напряжение инвертора",
+      "Inverter voltage too high fault": "Высокое напряжение инвертора", "Over temperature": "Перегрев",
+      "Fan locked": "Вентилятор заблокирован", "Battery voltage high": "Высокое напряжение АКБ",
+      "Battery low alarm warning": "АКБ разряжена", "Battery under shutdown warning": "Отключение по разряду АКБ",
+      "Overload": "Перегрузка", "EEPROM fault": "Сбой EEPROM", "Inverter over current fault": "Перегрузка по току",
+      "Inverter soft fail fault": "Сбой плавного пуска", "Self test fail fault": "Ошибка самотеста",
+      "Output DC voltage over fault": "Постоянка на выходе", "Battery open fault": "АКБ не подключена",
+      "Current sensor fail fault": "Сбой датчика тока", "Battery short fault": "КЗ АКБ",
+      "Power limit warning": "Ограничение мощности", "PV voltage high warning": "Высокое напряжение PV",
+      "MPPT overload fault": "Авария перегрузки MPPT", "MPPT overload warning": "Перегрузка MPPT",
+      "Battery too low to charge warning": "АКБ слишком разряжена для заряда", "DC/DC over current fault": "Перегрузка DC/DC",
+      "Battery weak warning": "Слабая АКБ", "Low PV energy warning": "Мало энергии PV",
+      "High AC input during bus soft start warning": "Высокое AC при пуске шины", "Battery equalization warning": "Выравнивание АКБ",
+    },
+    more: "ещё",
     numbers: {
       battery_bulk_voltage: "Напряжение заряда (CV)", battery_float_voltage: "Напряжение поддержки",
       battery_cut_off_voltage: "Отсечка разряда", battery_recharge_voltage: "Возврат на сеть при",
@@ -107,6 +139,29 @@ const I18N = {
       overload_bypass_enabled: "Байпас при перевантаженні", overload_restart_enabled: "Перезапуск після перевантаження",
       over_temperature_restart_enabled: "Перезапуск після перегріву",
     },
+    options: {
+      battery_type: { AGM: "AGM", Flooded: "Кислотна (рідкий електроліт)", User: "Користувацький" },
+      input_voltage_range: { Appliance: "Побутовий (90–280 В)", UPS: "ДБЖ (170–280 В)" },
+    },
+    alarms: {
+      Ok: "Норма", "PV loss warning": "Немає PV", "Inverter fault": "Аварія інвертора",
+      "Bus over fault": "Перенапруга шини", "Bus under fault": "Низька напруга шини",
+      "Bus soft fail fault": "Збій плавного пуску шини", "Line fail warning": "Зникла мережа",
+      "Output voltage fault": "Аварія вихідної напруги", "Inverter voltage too low fault": "Низька напруга інвертора",
+      "Inverter voltage too high fault": "Висока напруга інвертора", "Over temperature": "Перегрів",
+      "Fan locked": "Вентилятор заблоковано", "Battery voltage high": "Висока напруга АКБ",
+      "Battery low alarm warning": "АКБ розряджена", "Battery under shutdown warning": "Вимкнення через розряд АКБ",
+      "Overload": "Перевантаження", "EEPROM fault": "Збій EEPROM", "Inverter over current fault": "Перевантаження за струмом",
+      "Inverter soft fail fault": "Збій плавного пуску", "Self test fail fault": "Помилка самотесту",
+      "Output DC voltage over fault": "Постійна напруга на виході", "Battery open fault": "АКБ не під'єднана",
+      "Current sensor fail fault": "Збій датчика струму", "Battery short fault": "КЗ АКБ",
+      "Power limit warning": "Обмеження потужності", "PV voltage high warning": "Висока напруга PV",
+      "MPPT overload fault": "Аварія перевантаження MPPT", "MPPT overload warning": "Перевантаження MPPT",
+      "Battery too low to charge warning": "АКБ надто розряджена для заряду", "DC/DC over current fault": "Перевантаження DC/DC",
+      "Battery weak warning": "Слабка АКБ", "Low PV energy warning": "Мало енергії PV",
+      "High AC input during bus soft start warning": "Висока AC під час пуску шини", "Battery equalization warning": "Вирівнювання АКБ",
+    },
+    more: "ще",
     numbers: {
       battery_bulk_voltage: "Напруга заряду (CV)", battery_float_voltage: "Напруга підтримки",
       battery_cut_off_voltage: "Відсічка розряду", battery_recharge_voltage: "Повернення на мережу при",
@@ -138,6 +193,14 @@ const STYLE = `
   :host { --eb-pv:#e8a317; --eb-batt:#2fa866; --eb-grid:#4f86e8; --eb-home:#9a6fd6;
           --eb-track:var(--divider-color,#e0e0e0); --eb-muted:var(--secondary-text-color,#727272);
           --eb-bg:var(--card-background-color,var(--ha-card-background,#fff)); }
+  :host([data-theme="dark"]) {
+    --primary-text-color:#e6e6e6; --secondary-text-color:#9e9e9e; --divider-color:#3a3a3a;
+    --card-background-color:#1c1c1c; --ha-card-background:#1c1c1c; --eb-bg:#1c1c1c; color-scheme:dark;
+  }
+  :host([data-theme="light"]) {
+    --primary-text-color:#1c1c1c; --secondary-text-color:#727272; --divider-color:#e0e0e0;
+    --card-background-color:#fff; --ha-card-background:#fff; --eb-bg:#fff; color-scheme:light;
+  }
   ha-card { padding:16px; overflow:hidden; }
   .hdr { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
   .title { font-size:18px; font-weight:500; flex:1 1 auto; min-width:0;
@@ -238,6 +301,7 @@ const STYLE = `
   .row select, .row input { font:inherit; font-size:14px; color:var(--primary-text-color); background:transparent;
        border:1px solid var(--divider-color,#ccc); border-radius:8px; padding:6px 8px; }
   .row select { max-width:55%; }
+  .row select option { background:var(--eb-bg); color:var(--primary-text-color); }
   .row input[type=number] { width:76px; text-align:right; }
   .row .unit { font-size:13px; color:var(--eb-muted); }
   .row .apply { all:unset; cursor:pointer; font-size:13px; font-weight:500; color:var(--primary-color); padding:6px 8px; border-radius:8px; }
@@ -308,6 +372,8 @@ class EyeBondInverterCard extends HTMLElement {
     this._config = { show_controls: true, animation: "auto", ...(config || {}) };
     const anim = ["always", "off"].includes(this._config.animation) ? this._config.animation : "auto";
     this.setAttribute("data-anim", anim);
+    const theme = ["light", "dark"].includes(this._config.theme) ? this._config.theme : "auto";
+    this.setAttribute("data-theme", theme);
     this._prefix = this._config.device || null;
     this._built = false;
     this._pending = {};
@@ -317,6 +383,10 @@ class EyeBondInverterCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    // Native controls (select pop-ups, number spinners) follow the HA theme too.
+    if (this.getAttribute("data-theme") === "auto") {
+      this.style.colorScheme = hass?.themes?.darkMode ? "dark" : "light";
+    }
     this._render();
   }
 
@@ -327,7 +397,7 @@ class EyeBondInverterCard extends HTMLElement {
 
   // ---------------------------------------------------------------- helpers
   get _t() {
-    const lang = (this._hass?.locale?.language || this._hass?.language || "en").slice(0, 2);
+    const lang = String(this._hass?.locale?.language || this._hass?.language || "en").toLowerCase().slice(0, 2);
     return I18N[lang] || I18N.en;
   }
 
@@ -503,7 +573,10 @@ class EyeBondInverterCard extends HTMLElement {
     const alarmOn = this._st("binary_sensor", "alarm_active")?.state === "on";
     const alarmEl = root.querySelector("[data-alarm]");
     alarmEl.hidden = !alarmOn;
-    alarmEl.lastElementChild.textContent = this._alarmText(this._str("alarm_status"));
+    const alarms = this._alarmList(this._str("alarm_status"));
+    alarmEl.lastElementChild.textContent = alarms.length > 1
+      ? `${alarms[0]} +${alarms.length - 1} ${t.more}` : alarms[0] || "";
+    alarmEl.title = alarms.join("\n");
 
     // Flow values
     const pv = this._num("pv_power");
@@ -548,12 +621,10 @@ class EyeBondInverterCard extends HTMLElement {
     if (this._dialog) this._updateDialog();
   }
 
-  _alarmText(raw) {
-    if (!raw) return "";
-    const map = {
-      "Line fail warning": this._t.no_grid,
-    };
-    return map[raw] || raw;
+  _alarmList(raw) {
+    if (!raw || raw === "Ok") return [];
+    const names = this._t.alarms || {};
+    return raw.split(";").map((a) => a.trim()).filter(Boolean).map((a) => names[a] || a);
   }
 
   _setNode(name, active, value, caption) {
@@ -621,7 +692,8 @@ class EyeBondInverterCard extends HTMLElement {
   _selectRow(key, label) {
     const s = this._st("select", key);
     if (!s) return "";
-    const opts = (s.attributes.options || []).map((o) => `<option value="${o}">${o}</option>`).join("");
+    const labels = this._t.options?.[key] || {};
+    const opts = (s.attributes.options || []).map((o) => `<option value="${o}">${labels[o] || o}</option>`).join("");
     return `<div class="row" data-row="select:${key}"><span class="lbl">${label}</span><select data-select="${key}">${opts}</select></div>`;
   }
 
