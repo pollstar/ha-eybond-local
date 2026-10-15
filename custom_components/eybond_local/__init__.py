@@ -94,6 +94,7 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     from .services import async_setup_services
     from .support.download import async_register_download_views
     from .passive_discovery import async_start_passive_callback_discovery
+    from .frontend import async_register_card
 
     domain_data = hass.data.setdefault(DOMAIN, {})
     domain_data[_COMPONENT_SETUP_COMPLETE_KEY] = False
@@ -136,6 +137,7 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
         remove_component_listener()
         logger.exception("Failed to initialize EyeBond Local integration bootstrap")
         raise
+    await async_register_card(hass)
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
