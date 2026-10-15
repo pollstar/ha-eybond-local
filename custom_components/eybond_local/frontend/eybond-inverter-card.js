@@ -20,7 +20,7 @@
  * entities; the card only calls select / number / switch services.
  */
 
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.3.1";
 
 // Hash the integration put in our URL (?v=…); null when loaded some other way.
 const LOADED_VERSION = (() => {
@@ -48,6 +48,8 @@ const INTEGRATION = "eybond_local";
 const I18N = {
   en: {
     update_available: "Card updated. Reload the page to use the new version.", reload: "Reload",
+    f_title: { pv: "Where the solar went", home: "What powered the home", batt: "What charged the battery" },
+    f_grid_note: "Grid energy is calculated from the balance (no grid meter); inverter losses are not included.",
     h_title: { pv: "Solar production", grid: "Grid", home: "Home consumption", batt: "Battery" },
     h_period: { day: "Day", month: "Month", year: "Year" },
     h_prev: "Previous", h_next: "Next", h_more: "Live values", h_total: "Total",
@@ -92,6 +94,8 @@ const I18N = {
   },
   ru: {
     update_available: "Карточка обновлена. Перезагрузите страницу.", reload: "Перезагрузить",
+    f_title: { pv: "Куда ушло солнце", home: "Чем питался дом", batt: "Чем заряжалась АКБ" },
+    f_grid_note: "Энергия сети вычислена из баланса (счётчика сети нет), потери инвертора не учтены.",
     h_title: { pv: "Выработка солнца", grid: "Сеть", home: "Потребление дома", batt: "Аккумулятор" },
     h_period: { day: "День", month: "Месяц", year: "Год" },
     h_prev: "Назад", h_next: "Вперёд", h_more: "Текущие значения", h_total: "Всего",
@@ -153,6 +157,8 @@ const I18N = {
   },
   uk: {
     update_available: "Картку оновлено. Перезавантажте сторінку.", reload: "Перезавантажити",
+    f_title: { pv: "Куди пішло сонце", home: "Чим живився дім", batt: "Чим заряджалася АКБ" },
+    f_grid_note: "Енергію мережі обчислено з балансу (лічильника мережі немає), втрати інвертора не враховано.",
     h_title: { pv: "Вироблення сонця", grid: "Мережа", home: "Споживання дому", batt: "Акумулятор" },
     h_period: { day: "День", month: "Місяць", year: "Рік" },
     h_prev: "Назад", h_next: "Вперед", h_more: "Поточні значення", h_total: "Усього",
@@ -397,6 +403,18 @@ const STYLE = `
 
   :host([data-anim="off"]) .flow .dash { animation:none; stroke-dasharray:none; opacity:0; }
   :host([data-anim="off"]) .flow .dash.on { opacity:.55; }
+  .flowbar { margin-top:12px; }
+  .flowbar .fb-h { display:flex; justify-content:space-between; gap:8px; font-size:13px; margin-bottom:6px; }
+  .flowbar .fb-h b { font-weight:600; font-variant-numeric:tabular-nums; }
+  .flowbar .fb-bar { display:flex; gap:2px; height:12px; border-radius:6px; overflow:hidden;
+                     background:var(--eb-track); }
+  .flowbar .fb-bar i { display:block; height:100%; background:var(--c); min-width:3px; }
+  .flowbar .fb-lg { display:flex; flex-wrap:wrap; gap:4px 14px; margin-top:6px; font-size:12px; color:var(--eb-muted); }
+  .flowbar .fb-lg span { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+  .flowbar .fb-lg span::before { content:""; width:8px; height:8px; border-radius:2px; background:var(--c); }
+  .flowbar .fb-lg b { color:var(--primary-text-color); font-weight:600; font-variant-numeric:tabular-nums; }
+  .fb-note { margin-top:10px; font-size:11.5px; color:var(--eb-muted); }
+  .c-pv { --c:var(--eb-pv); } .c-batt { --c:var(--eb-batt); } .c-grid { --c:var(--eb-grid); } .c-home { --c:var(--eb-home); }
   .h-head { display:flex; flex-direction:column; gap:10px; }
   .h-nav { display:flex; align-items:center; gap:4px; }
   .h-nav span { flex:1; text-align:center; font-size:14px; font-weight:500; }
@@ -945,9 +963,62 @@ class EyeBondInverterCard extends HTMLElement {
       ["temperature", ["inverter_temperature"]],
       ["bus", ["inverter_bus_voltage"]],
     ].map(([lbl, keys]) => `<div class="kv" data-info="sensor:${keys[0]}"><span>${t[lbl]}</span><span data-kv="${keys.join(",")}"></span></div>`).join("");
+    const flows = this._energyFlows()
+      ? `<div class="sec" data-flows>${["pv", "home", "batt"].map((f) => `<div class="flowbar" data-flow="${f}"></div>`).join("")}
+          ${this._st("sensor", "grid_voltage") && !this._st("sensor", "grid_power") ? `<div class="fb-note">${t.f_grid_note}</div>` : ""}</div>`
+      : "";
     return `<div class="sec"><h3>${t.today}</h3><div class="tiles">${tiles}</div></div>
+      ${flows}
       <div class="sec"><h3>${t.now}</h3>${kv}
         <div class="kv" data-info="sensor:model"><span>${t.model}</span><span data-model></span></div></div>`;
+  }
+
+  // Today's energy routes, from the integration's split kWh sensors. Routes the
+  // integration does not expose (PV->battery, grid->battery) are the remainder
+  // of their source total, clamped at zero.
+  _energyFlows() {
+    const v = (k) => this._num(`estimated_${k}_energy_today`);
+    const pvToHome = v("pv_to_home"), battToHome = v("battery_to_home"), gridToHome = v("grid_to_home");
+    if (pvToHome === null || battToHome === null || gridToHome === null) return null;
+    const pv = v("pv") || 0, gridIn = v("grid_import") || 0, gridOut = v("grid_export") || 0;
+    const charge = v("battery_charge") || 0;
+    const pvToGrid = Math.min(gridOut, Math.max(0, pv - pvToHome));
+    const pvToBatt = Math.max(0, pv - pvToHome - pvToGrid);
+    const gridToBatt = Math.max(0, Math.min(charge - Math.min(pvToBatt, charge), gridIn - gridToHome));
+    return {
+      pv: { total: pv, parts: [["home", pvToHome, "pv_to_home"], ["batt", pvToBatt, "pv"], ["grid", pvToGrid, "pv"]] },
+      home: { total: pvToHome + battToHome + gridToHome,
+              parts: [["pv", pvToHome, "pv_to_home"], ["batt", battToHome, "battery_to_home"], ["grid", gridToHome, "grid_to_home"]] },
+      batt: { total: Math.min(pvToBatt, charge) + gridToBatt,
+              parts: [["pv", Math.min(pvToBatt, charge), "battery_charge"], ["grid", gridToBatt, "battery_charge"]] },
+    };
+  }
+
+  _renderFlows(el) {
+    const flows = this._energyFlows();
+    if (!flows) return;
+    const t = this._t;
+    const name = { pv: t.solar, batt: t.battery, grid: t.grid, home: t.home };
+    el.querySelectorAll("[data-flow]").forEach((box) => {
+      const f = flows[box.dataset.flow];
+      const parts = f.parts.filter(([, val]) => val >= 0.005);
+      const sum = parts.reduce((a, [, val]) => a + val, 0);
+      const bar = sum > 0
+        ? parts.map(([k, val]) => `<i class="c-${k}" style="flex:${val / sum}" title="${name[k]}"></i>`).join("")
+        : "";
+      const lg = parts.map(([k, val, ent]) =>
+        `<span class="c-${k}" data-info="sensor:estimated_${ent}_energy_today">${name[k]} <b>${this._kwh(val)}</b>${
+          parts.length > 1 ? ` · ${this._fmt((val / sum) * 100)}%` : ""}</span>`).join("");
+      const html = `<div class="fb-h"><span>${t.f_title[box.dataset.flow]}</span><b>${this._kwh(f.total)}</b></div>
+        <div class="fb-bar">${bar}</div><div class="fb-lg">${lg || "—"}</div>`;
+      if (box._html === html) return; // hass updates arrive often; skip identical redraws
+      box._html = html;
+      box.innerHTML = html;
+      box.querySelectorAll("[data-info]").forEach((n) => n.addEventListener("click", () => {
+        const [domain, key] = n.dataset.info.split(":");
+        this._moreInfo(this._id(domain, key));
+      }));
+    });
   }
 
   _kvText(keys) {
@@ -1274,6 +1345,7 @@ class EyeBondInverterCard extends HTMLElement {
       el.querySelectorAll("[data-kv]").forEach((n) => {
         n.textContent = this._kvText(n.dataset.kv.split(","));
       });
+      this._renderFlows(el);
       const m = el.querySelector("[data-model]");
       if (m) m.textContent = [this._str("model"), this._str("protocol_variant")].filter(Boolean).join(" · ") || "—";
     }
