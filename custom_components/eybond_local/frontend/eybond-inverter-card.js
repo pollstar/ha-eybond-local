@@ -20,7 +20,7 @@
  * entities; the card only calls select / number / switch services.
  */
 
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.3.0";
 
 // Hash the integration put in our URL (?v=…); null when loaded some other way.
 const LOADED_VERSION = (() => {
@@ -48,6 +48,11 @@ const INTEGRATION = "eybond_local";
 const I18N = {
   en: {
     update_available: "Card updated. Reload the page to use the new version.", reload: "Reload",
+    h_title: { pv: "Solar production", grid: "Grid", home: "Home consumption", batt: "Battery" },
+    h_period: { day: "Day", month: "Month", year: "Year" },
+    h_prev: "Previous", h_next: "Next", h_more: "Live values", h_total: "Total",
+    h_no_data: "No data for this period yet. History builds up from the day the integration was installed.",
+    h_error: "History is unavailable (is the recorder enabled?)", h_loading: "Loading…",
     solar: "Solar", grid: "Grid", battery: "Battery", home: "Home",
     no_grid: "No grid", charging: "Charging", discharging: "Discharging", idle: "Idle",
     output_priority: "Output priority", charge_priority: "Charge source",
@@ -87,6 +92,11 @@ const I18N = {
   },
   ru: {
     update_available: "Карточка обновлена. Перезагрузите страницу.", reload: "Перезагрузить",
+    h_title: { pv: "Выработка солнца", grid: "Сеть", home: "Потребление дома", batt: "Аккумулятор" },
+    h_period: { day: "День", month: "Месяц", year: "Год" },
+    h_prev: "Назад", h_next: "Вперёд", h_more: "Текущие значения", h_total: "Всего",
+    h_no_data: "За этот период данных пока нет. История копится с момента установки интеграции.",
+    h_error: "История недоступна (включён ли recorder?)", h_loading: "Загрузка…",
     solar: "Солнце", grid: "Сеть", battery: "АКБ", home: "Дом",
     no_grid: "Нет сети", charging: "Заряд", discharging: "Разряд", idle: "Покой",
     output_priority: "Приоритет питания", charge_priority: "Источник заряда",
@@ -143,6 +153,11 @@ const I18N = {
   },
   uk: {
     update_available: "Картку оновлено. Перезавантажте сторінку.", reload: "Перезавантажити",
+    h_title: { pv: "Вироблення сонця", grid: "Мережа", home: "Споживання дому", batt: "Акумулятор" },
+    h_period: { day: "День", month: "Місяць", year: "Рік" },
+    h_prev: "Назад", h_next: "Вперед", h_more: "Поточні значення", h_total: "Усього",
+    h_no_data: "За цей період даних поки немає. Історія накопичується з моменту встановлення інтеграції.",
+    h_error: "Історія недоступна (чи ввімкнено recorder?)", h_loading: "Завантаження…",
     solar: "Сонце", grid: "Мережа", battery: "АКБ", home: "Дім",
     no_grid: "Немає мережі", charging: "Заряд", discharging: "Розряд", idle: "Спокій",
     output_priority: "Пріоритет живлення", charge_priority: "Джерело заряду",
@@ -215,6 +230,23 @@ const ENERGY_TILES = [
   ["estimated_grid_import_energy_today", "grid_in", "mdi:transmission-tower-import", "grid"],
   ["estimated_grid_export_energy_today", "grid_out", "mdi:transmission-tower-export", "grid"],
 ];
+// Energy history per flow node: daily-reset kWh sensors (state_class
+// total_increasing), so HA long-term statistics give per hour/day/month change.
+// dir 1 = drawn above the baseline, -1 = mirrored below it.
+const HISTORY = {
+  pv: { color: "--eb-pv", live: "pv_power",
+        series: [{ key: "estimated_pv_energy_today", label: "pv_energy", dir: 1 }] },
+  grid: { color: "--eb-grid", live: "grid_voltage",
+          series: [{ key: "estimated_grid_import_energy_today", label: "grid_in", dir: 1 },
+                   { key: "estimated_grid_export_energy_today", label: "grid_out", dir: -1 }] },
+  home: { color: "--eb-home", live: "load_power",
+          series: [{ key: "estimated_load_energy_today", label: "load_energy", dir: 1 }] },
+  batt: { color: "--eb-batt", live: "battery_percent",
+          series: [{ key: "estimated_battery_charge_energy_today", label: "batt_in", dir: 1 },
+                   { key: "estimated_battery_discharge_energy_today", label: "batt_out", dir: -1 }] },
+};
+const STAT_PERIOD = { day: "hour", month: "day", year: "month" };
+
 const FLOW_W = 5; // watts below which a path is considered idle
 const PENDING_MS = 30000; // PI30 polls slowly; keep the pending hint until readback
 
@@ -365,6 +397,52 @@ const STYLE = `
 
   :host([data-anim="off"]) .flow .dash { animation:none; stroke-dasharray:none; opacity:0; }
   :host([data-anim="off"]) .flow .dash.on { opacity:.55; }
+  .h-head { display:flex; flex-direction:column; gap:10px; }
+  .h-nav { display:flex; align-items:center; gap:4px; }
+  .h-nav span { flex:1; text-align:center; font-size:14px; font-weight:500; }
+  .h-nav button { all:unset; cursor:pointer; width:36px; height:36px; border-radius:50%;
+                  display:flex; align-items:center; justify-content:center; color:var(--primary-text-color); }
+  .h-nav button:hover { background:color-mix(in srgb,var(--primary-text-color) 8%,transparent); }
+  .h-nav button:disabled { opacity:.3; cursor:default; background:none; }
+  .h-nav button:focus-visible { outline:2px solid var(--primary-color); }
+  .h-total { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 16px; margin:14px 0 6px; }
+  .h-total .big { font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .h-total .lg { display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--eb-muted); }
+  .h-total .lg i { width:10px; height:10px; border-radius:3px; background:var(--c); }
+  .h-total .lg i.down { background:color-mix(in srgb,var(--c) 50%,var(--eb-bg)); }
+  .h-total .lg b { color:var(--primary-text-color); font-weight:600; font-variant-numeric:tabular-nums; }
+  .h-chart { position:relative; height:200px; margin-top:8px; display:grid; grid-template-columns:auto 1fr; gap:0 6px; }
+  .h-y { position:relative; min-width:26px; font-size:10.5px; color:var(--eb-muted);
+         text-align:right; font-variant-numeric:tabular-nums; }
+  .h-y span { position:absolute; right:0; transform:translateY(-50%); line-height:1; }
+  .h-y span.top { transform:none; } .h-y span.bottom { transform:translateY(-100%); }
+  .h-plot { position:relative; display:flex; flex-direction:column; min-width:0; }
+  .h-half { position:relative; display:flex; gap:2px; }
+  .h-half.up { align-items:flex-end; border-bottom:1px solid var(--eb-track); }
+  .h-half.down { align-items:flex-start; }
+  .h-grid { position:absolute; left:0; right:0; top:0; border-top:1px dashed var(--eb-track); pointer-events:none; }
+  .h-half.down .h-grid { top:auto; bottom:0; }
+  .h-col { flex:1 1 0; min-width:0; height:100%; display:flex; cursor:pointer; position:relative; }
+  .h-half.up .h-col { align-items:flex-end; } .h-half.down .h-col { align-items:flex-start; }
+  .h-bar { width:100%; background:var(--c); border-radius:4px 4px 0 0; min-height:0; transition:height .25s; }
+  .h-half.down .h-bar { background:color-mix(in srgb,var(--c) 50%,var(--eb-bg)); border-radius:0 0 4px 4px; }
+  .h-col.hot .h-bar { filter:brightness(1.15); }
+  .h-col.hot::after { content:""; position:absolute; inset:0 -1px; border-radius:4px;
+                      background:color-mix(in srgb,var(--primary-text-color) 7%,transparent); pointer-events:none; }
+  .h-x { position:relative; height:16px; font-size:10.5px; color:var(--eb-muted); margin-top:4px; }
+  .h-x span { position:absolute; transform:translateX(-50%); white-space:nowrap; }
+  .h-tip { position:absolute; z-index:2; pointer-events:none; transform:translate(-50%,-100%); margin-top:-6px;
+           background:var(--eb-bg); color:var(--primary-text-color); border:1px solid var(--divider-color,#ddd);
+           border-radius:8px; padding:6px 9px; font-size:12px; line-height:1.4; white-space:nowrap;
+           box-shadow:0 4px 14px rgba(0,0,0,.18); font-variant-numeric:tabular-nums; }
+  .h-tip .t { color:var(--eb-muted); }
+  .h-msg { height:200px; display:flex; align-items:center; justify-content:center; text-align:center;
+           padding:0 16px; font-size:13px; color:var(--eb-muted); }
+  .h-more { all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:6px; margin-top:16px;
+            font-size:13px; font-weight:500; color:var(--primary-color); padding:6px 8px; border-radius:8px; }
+  .h-more:hover { background:color-mix(in srgb,var(--primary-color) 10%,transparent); }
+  .h-more ha-icon { --mdc-icon-size:18px; }
+
   @media (prefers-reduced-motion: reduce) {
     :host(:not([data-anim="always"])) .flow .dash { animation:none; stroke-dasharray:none; opacity:0; }
     :host(:not([data-anim="always"])) .flow .dash.on { opacity:.55; }
@@ -616,7 +694,11 @@ class EyeBondInverterCard extends HTMLElement {
     const root = this.shadowRoot;
     const nodeEntity = { pv: "pv_power", grid: "grid_voltage", batt: "battery_percent", home: "load_power" };
     root.querySelectorAll("[data-node]").forEach((el) =>
-      el.addEventListener("click", () => this._moreInfo(this._id("sensor", nodeEntity[el.dataset.node]))));
+      el.addEventListener("click", () => {
+        const node = el.dataset.node;
+        if (this._historySeries(node).length) this._openDialog(`history:${node}`);
+        else this._moreInfo(this._id("sensor", nodeEntity[node]));
+      }));
     root.querySelector("[data-hub]").addEventListener("click", () => this._moreInfo(this._id("sensor", "inverter_temperature")));
     root.querySelector("[data-mode]").addEventListener("click", () => this._moreInfo(this._id("sensor", "operating_mode")));
     root.querySelector("[data-alarm]").addEventListener("click", () => this._moreInfo(this._id("sensor", "alarm_status")));
@@ -746,10 +828,13 @@ class EyeBondInverterCard extends HTMLElement {
     const t = this._t;
     const wrap = document.createElement("div");
     wrap.className = "backdrop";
-    wrap.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" aria-label="${kind === "settings" ? t.settings : t.stats}">
-        <header><span>${kind === "settings" ? t.settings : t.stats}</span>
+    const node = kind.startsWith("history:") ? kind.slice(8) : null;
+    const title = node ? t.h_title[node] : kind === "settings" ? t.settings : t.stats;
+    const body = node ? this._historyHtml(node) : kind === "settings" ? this._settingsHtml() : this._statsHtml();
+    wrap.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" aria-label="${title}">
+        <header><span>${title}</span>
           <button data-close aria-label="${t.close}"><ha-icon icon="mdi:close"></ha-icon></button></header>
-        <div class="dlg-body">${kind === "settings" ? this._settingsHtml() : this._statsHtml()}</div>
+        <div class="dlg-body">${body}</div>
       </div>`;
     wrap.addEventListener("click", (ev) => { if (ev.target === wrap) this._closeDialog(); });
     wrap.querySelector("[data-close]").addEventListener("click", () => this._closeDialog());
@@ -757,13 +842,15 @@ class EyeBondInverterCard extends HTMLElement {
     window.addEventListener("keydown", this._onKey);
     this.shadowRoot.appendChild(wrap);
     this._dialog = { kind, el: wrap };
-    if (kind === "settings") this._wireSettings(wrap);
+    if (node) this._wireHistory(wrap, node);
+    else if (kind === "settings") this._wireSettings(wrap);
     else this._wireStats(wrap);
     this._updateDialog();
     wrap.querySelector("[data-close]").focus();
   }
 
   _closeDialog() {
+    this._hist = null;
     if (this._dialog) this._dialog.el.remove();
     this._dialog = null;
     if (this._onKey) window.removeEventListener("keydown", this._onKey);
@@ -886,10 +973,268 @@ class EyeBondInverterCard extends HTMLElement {
       }));
   }
 
+  // ---------------------------------------------------------------- history
+  _historySeries(node) {
+    const cfg = HISTORY[node];
+    return cfg ? cfg.series.filter((s) => this._st("sensor", s.key)) : [];
+  }
+
+  _historyHtml(node) {
+    const t = this._t;
+    const cfg = HISTORY[node];
+    return `<div class="h-head" style="--c:var(${cfg.color})">
+        <div class="seg" data-hperiod>${["day", "month", "year"]
+          .map((p) => `<button data-p="${p}">${t.h_period[p]}</button>`).join("")}</div>
+        <div class="h-nav">
+          <button data-hstep="-1" aria-label="${t.h_prev}"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+          <span data-hlabel></span>
+          <button data-hstep="1" aria-label="${t.h_next}"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+        </div>
+      </div>
+      <div style="--c:var(${cfg.color})">
+        <div class="h-total" data-htotal></div>
+        <div data-hbody><div class="h-msg">${t.h_loading}</div></div>
+      </div>
+      <button class="h-more" data-hmore><ha-icon icon="mdi:chart-line"></ha-icon>${t.h_more}</button>`;
+  }
+
+  _wireHistory(wrap, node) {
+    this._hist = { node, period: "day", anchor: new Date(), req: 0, data: null, liveAt: 0 };
+    wrap.querySelector("[data-hperiod]").addEventListener("click", (ev) => {
+      const b = ev.target.closest("button[data-p]");
+      if (!b || b.dataset.p === this._hist.period) return;
+      this._hist.period = b.dataset.p;
+      this._hist.anchor = new Date();
+      this._loadHistory();
+    });
+    wrap.querySelectorAll("[data-hstep]").forEach((b) => b.addEventListener("click", () => {
+      if (b.disabled) return;
+      this._hist.anchor = this._shiftPeriod(this._hist.anchor, this._hist.period, Number(b.dataset.hstep));
+      this._loadHistory();
+    }));
+    wrap.querySelector("[data-hmore]").addEventListener("click", () =>
+      this._moreInfo(this._id("sensor", HISTORY[node].live)));
+    this._loadHistory();
+  }
+
+  _periodRange(period, anchor) {
+    const s = new Date(anchor);
+    s.setHours(0, 0, 0, 0);
+    if (period !== "day") s.setDate(1);
+    if (period === "year") s.setMonth(0);
+    const e = this._shiftPeriod(s, period, 1);
+    const n = period === "day" ? 24 : period === "month" ? Math.round((e - s) / 864e5) : 12;
+    return { s, e, n };
+  }
+
+  _shiftPeriod(d, period, step) {
+    const x = new Date(d);
+    if (period === "day") x.setDate(x.getDate() + step);
+    else if (period === "month") { x.setDate(1); x.setMonth(x.getMonth() + step); }
+    else x.setFullYear(x.getFullYear() + step);
+    return x;
+  }
+
+  _bucketIndex(period, date) {
+    return period === "day" ? date.getHours() : period === "month" ? date.getDate() - 1 : date.getMonth();
+  }
+
+  _statTime(v) {
+    return typeof v === "number" ? new Date(v < 1e12 ? v * 1000 : v) : new Date(v);
+  }
+
+  async _loadHistory() {
+    const h = this._hist;
+    const req = ++h.req;
+    const { period } = h;
+    const { s, e, n } = this._periodRange(period, h.anchor);
+    const series = this._historySeries(h.node);
+    const ids = series.map((x) => this._id("sensor", x.key));
+    this._renderHistoryFrame();
+    try {
+      const stats = await this._hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: s.toISOString(), end_time: e.toISOString(),
+        statistic_ids: ids, period: STAT_PERIOD[period], types: ["change"], units: { energy: "kWh" },
+      });
+      const values = ids.map((id) => {
+        const arr = new Array(n).fill(0);
+        for (const row of stats?.[id] || []) {
+          const i = this._bucketIndex(period, this._statTime(row.start));
+          if (i >= 0 && i < n && Number.isFinite(row.change)) arr[i] += Math.max(0, row.change);
+        }
+        return arr;
+      });
+      // Long-term statistics lag up to an hour: put what today's counters
+      // gained since the last compiled hour into the bucket holding "now".
+      const now = new Date();
+      if (now >= s && now < e) {
+        const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
+        const todayStats = period === "day" ? stats : await this._hass.callWS({
+          type: "recorder/statistics_during_period",
+          start_time: day0.toISOString(), end_time: now.toISOString(),
+          statistic_ids: ids, period: "hour", types: ["change"], units: { energy: "kWh" },
+        });
+        ids.forEach((id, k) => {
+          const today = this._num(series[k].key);
+          if (today === null) return;
+          const compiled = (todayStats?.[id] || [])
+            .filter((r) => this._statTime(r.start) >= day0)
+            .reduce((a, r) => a + (Number.isFinite(r.change) ? Math.max(0, r.change) : 0), 0);
+          const pending = today - compiled;
+          if (pending > 0.0005) values[k][this._bucketIndex(period, now)] += pending;
+        });
+      }
+      if (req !== h.req || this._hist !== h || !this._dialog) return;
+      h.data = { period, s, e, n, series, values };
+      h.liveAt = Date.now();
+      this._renderHistory();
+    } catch (err) {
+      if (req !== h.req || this._hist !== h || !this._dialog) return;
+      h.data = null;
+      this._historyMessage(this._t.h_error);
+      console.warn("eybond-inverter-card: history query failed", err);
+    }
+  }
+
+  _historyLiveRefresh() {
+    // Re-query at most once a minute while the current period is on screen.
+    const h = this._hist;
+    if (!h?.data || Date.now() - h.liveAt < 60000) return;
+    const now = new Date();
+    if (now >= h.data.s && now < h.data.e) { h.liveAt = Date.now(); this._loadHistory(); }
+  }
+
+  _renderHistoryFrame() {
+    const el = this._dialog?.el;
+    if (!el) return;
+    const h = this._hist;
+    const lang = this._hass?.locale?.language || "en";
+    const { s } = this._periodRange(h.period, h.anchor);
+    const fmt = h.period === "day" ? { day: "numeric", month: "long", year: "numeric", weekday: "short" }
+      : h.period === "month" ? { month: "long", year: "numeric" } : { year: "numeric" };
+    el.querySelector("[data-hlabel]").textContent = new Intl.DateTimeFormat(lang, fmt).format(s);
+    el.querySelectorAll("[data-hperiod] button").forEach((b) => b.classList.toggle("active", b.dataset.p === h.period));
+    const next = el.querySelector('[data-hstep="1"]');
+    next.disabled = this._shiftPeriod(s, h.period, 1) > new Date();
+  }
+
+  _historyMessage(text) {
+    const el = this._dialog?.el;
+    if (!el) return;
+    el.querySelector("[data-htotal]").innerHTML = "";
+    el.querySelector("[data-hbody]").innerHTML = `<div class="h-msg">${text}</div>`;
+  }
+
+  _kwh(v) {
+    return `${this._fmt(v, v < 10 ? 2 : v < 100 ? 1 : 0)} ${this._unit("kWh")}`;
+  }
+
+  _niceMax(v) {
+    if (v <= 0) return 0;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+    return 10 * p;
+  }
+
+  _renderHistory() {
+    const el = this._dialog?.el;
+    const d = this._hist?.data;
+    if (!el || !d) return;
+    const t = this._t;
+    const lang = this._hass?.locale?.language || "en";
+    const totals = d.values.map((a) => a.reduce((x, y) => x + y, 0));
+    if (totals.every((v) => v < 0.0005)) { this._historyMessage(t.h_no_data); return; }
+
+    // A mirrored series with nothing in it (e.g. no export off-grid) is hidden.
+    const shown = d.series.map((s, k) => ({ ...s, k })).filter((s) => s.dir === 1 || totals[s.k] >= 0.0005);
+    const up = shown.find((s) => s.dir === 1);
+    const down = shown.find((s) => s.dir === -1);
+    const upMax = this._niceMax(Math.max(...(up ? d.values[up.k] : [0])));
+    const downMax = down ? this._niceMax(Math.max(...d.values[down.k])) : 0;
+
+    // Nodes with two directions keep the labelled legend even when one side
+    // is empty, so "Grid 19 kWh" is never ambiguous about import vs export.
+    el.querySelector("[data-htotal]").innerHTML = d.series.length === 1
+      ? `<span class="big">${this._kwh(totals[shown[0].k])}</span>`
+      : shown.map((s) => `<span class="lg"><i class="${s.dir < 0 ? "down" : ""}"></i>${t[s.label]} <b>${this._kwh(totals[s.k])}</b></span>`).join("");
+
+    const cols = (s, max) => d.values[s.k].map((v, i) =>
+      `<div class="h-col" data-i="${i}"><div class="h-bar" style="height:${max ? (v / max) * 100 : 0}%"></div></div>`).join("");
+    const total = upMax + downMax || 1;
+    const H = 168;
+    const upH = Math.round((H * upMax) / total);
+    const yFmt = (v) => this._fmt(v, v < 1 ? 2 : v < 10 ? 1 : 0);
+    const plotH = down ? H : upH;
+    const yLabels = [
+      upMax ? `<span class="top" style="top:0">${yFmt(upMax)}</span>` : "",
+      `<span class="${down ? "" : "bottom"}" style="top:${upH}px">0</span>`,
+      down ? `<span class="bottom" style="top:${H}px">${yFmt(downMax)}</span>` : "",
+    ].join("");
+    const ticks = this._xTicks(d, lang);
+
+    el.querySelector("[data-hbody]").innerHTML = `
+      <div class="h-chart" style="height:${plotH + 20}px">
+        <div class="h-y" style="height:${plotH}px">${yLabels}</div>
+        <div class="h-plot">
+          <div class="h-half up" style="height:${upH}px"><div class="h-grid"></div>${up ? cols(up, upMax) : ""}</div>
+          ${down ? `<div class="h-half down" style="height:${H - upH}px"><div class="h-grid"></div>${cols(down, downMax)}</div>` : ""}
+          <div class="h-x">${ticks}</div>
+          <div class="h-tip" data-htip hidden></div>
+        </div>
+      </div>`;
+
+    const plot = el.querySelector(".h-plot");
+    const tip = el.querySelector("[data-htip]");
+    const show = (i) => {
+      plot.querySelectorAll(".h-col").forEach((c) => c.classList.toggle("hot", Number(c.dataset.i) === i));
+      const lines = shown.map((s) => `${t[s.label]}: <b>${this._kwh(d.values[s.k][i])}</b>`).join("<br>");
+      tip.innerHTML = `<div class="t">${this._bucketLabel(d, i, lang)}</div>${lines}`;
+      tip.hidden = false;
+      const x = ((i + 0.5) / d.n) * plot.clientWidth;
+      const half = tip.offsetWidth / 2;
+      tip.style.left = `${Math.min(Math.max(x, half), plot.clientWidth - half)}px`;
+      tip.style.top = "0px";
+    };
+    const hide = () => { tip.hidden = true; plot.querySelectorAll(".h-col.hot").forEach((c) => c.classList.remove("hot")); };
+    plot.querySelectorAll(".h-col").forEach((c) => {
+      const i = Number(c.dataset.i);
+      c.addEventListener("mouseenter", () => show(i));
+      c.addEventListener("click", () => show(i));
+    });
+    plot.addEventListener("mouseleave", hide);
+  }
+
+  _xTicks(d, lang) {
+    const pos = (i) => `${((i + 0.5) / d.n) * 100}%`;
+    let idx;
+    if (d.period === "day") idx = [0, 3, 6, 9, 12, 15, 18, 21];
+    else if (d.period === "month") idx = [0, 4, 9, 14, 19, 24, d.n - 1].filter((i, k, a) => i < d.n && a.indexOf(i) === k);
+    else idx = [...Array(12).keys()];
+    const mon = new Intl.DateTimeFormat(lang, { month: "narrow" });
+    return idx.map((i) => {
+      const label = d.period === "day" ? String(i).padStart(2, "0")
+        : d.period === "month" ? String(i + 1)
+        : mon.format(new Date(d.s.getFullYear(), i, 1));
+      return `<span style="left:${pos(i)}">${label}</span>`;
+    }).join("");
+  }
+
+  _bucketLabel(d, i, lang) {
+    if (d.period === "day") return `${String(i).padStart(2, "0")}:00–${String((i + 1) % 24).padStart(2, "0")}:00`;
+    if (d.period === "month") {
+      return new Intl.DateTimeFormat(lang, { day: "numeric", month: "long", weekday: "short" })
+        .format(new Date(d.s.getFullYear(), d.s.getMonth(), i + 1));
+    }
+    return new Intl.DateTimeFormat(lang, { month: "long", year: "numeric" }).format(new Date(d.s.getFullYear(), i, 1));
+  }
+
   _updateDialog() {
     const { kind, el } = this._dialog;
     const t = this._t;
-    if (kind === "settings") {
+    if (kind.startsWith("history:")) {
+      this._historyLiveRefresh();
+    } else if (kind === "settings") {
       const out = this._str("output_source_priority", "select");
       const hint = el.querySelector("[data-out-hint]");
       if (hint) hint.textContent = (out && t.out_hint[out]) || "";
