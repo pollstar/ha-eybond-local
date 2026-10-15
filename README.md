@@ -273,6 +273,35 @@ mode, and the difference between unavailable and disabled entities.
 
 ---
 
+## Dashboard card
+
+EyeBond Local ships its own Lovelace card, `custom:eybond-inverter-card`:
+power flow between solar, grid, battery and home, battery state, mode and
+alarms, output priority, a settings dialog for the inverter's verified
+controls and today's energy statistics.
+
+```yaml
+type: custom:eybond-inverter-card
+# all optional:
+device: pi30_6200      # entity-id prefix; auto-detected when omitted
+title: Inverter
+theme: auto            # auto | light | dark
+animation: auto        # auto (follows OS "reduce motion") | always | off
+show_controls: true
+auto_reload: true      # reload open pages once after the integration updates
+```
+
+The dashboard resource is managed automatically: on every start the
+integration keeps exactly one resource
+`/eybond_local_static/eybond-inverter-card.js?v=<hash>` (Settings → Dashboards
+→ ⋮ → Resources, visible in Advanced mode). An update changes the hash, so
+browsers load the new card instead of a cached copy, and pages that were open
+during the update reload themselves once. A hand-made entry for the same path
+is taken over; a copy of the card elsewhere (for example under `/local/`) is
+left alone and reported in the log — remove it. Dashboards in YAML mode get
+the card as an extra frontend module instead. The card follows the Home
+Assistant theme and UI language (English, Ukrainian, Russian).
+
 ## Device learning
 
 Some devices can be added in read-only or partial mode first. **Expand device

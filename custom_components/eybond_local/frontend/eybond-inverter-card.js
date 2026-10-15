@@ -1,7 +1,9 @@
 /*
  * EyeBond Inverter Card — Lovelace card for EyeBond Local hybrid inverters.
  *
- * Served by the eybond_local integration; no extra resource is needed.
+ * Served by the eybond_local integration, which also keeps the dashboard
+ * resource /eybond_local_static/eybond-inverter-card.js?v=<hash> current —
+ * nothing to add by hand.
  *   type: custom:eybond-inverter-card
  *   device: pi30_6200        # optional, object-id prefix; auto-detected
  *   title: Инвертор          # optional
@@ -9,6 +11,8 @@
  *   animation: auto          # auto | always | off — auto follows the OS
  *                            # "reduce motion" setting
  *   theme: auto              # auto | light | dark — auto follows the HA theme
+ *   auto_reload: true        # reload the page once when the integration was
+ *                            # updated and serves a newer card
  *
  * Language follows the HA UI language: Ukrainian, Russian, otherwise English.
  *
@@ -16,11 +20,34 @@
  * entities; the card only calls select / number / switch services.
  */
 
-const CARD_VERSION = "0.1.2";
+const CARD_VERSION = "0.2.0";
+
+// Hash the integration put in our URL (?v=…); null when loaded some other way.
+const LOADED_VERSION = (() => {
+  try { return new URL(import.meta.url).searchParams.get("v"); } catch (_e) { return null; }
+})();
+const VERSION_CHECK_EVERY_MS = 10 * 60 * 1000;
+
+// One shared check for all card instances: only the in-flight request is
+// shared; every later check asks the server again.
+const versionCheck = {
+  inflight: null,
+  lastAt: 0,
+  fetch(hass) {
+    if (!this.inflight) {
+      this.inflight = hass.callApi("GET", "eybond_local/card_version")
+        .then((r) => (r && typeof r.version === "string" ? r.version : null))
+        .catch(() => null)
+        .finally(() => { this.inflight = null; this.lastAt = Date.now(); });
+    }
+    return this.inflight;
+  },
+};
 const INTEGRATION = "eybond_local";
 
 const I18N = {
   en: {
+    update_available: "Card updated. Reload the page to use the new version.", reload: "Reload",
     solar: "Solar", grid: "Grid", battery: "Battery", home: "Home",
     no_grid: "No grid", charging: "Charging", discharging: "Discharging", idle: "Idle",
     output_priority: "Output priority", charge_priority: "Charge source",
@@ -59,6 +86,7 @@ const I18N = {
     },
   },
   ru: {
+    update_available: "Карточка обновлена. Перезагрузите страницу.", reload: "Перезагрузить",
     solar: "Солнце", grid: "Сеть", battery: "АКБ", home: "Дом",
     no_grid: "Нет сети", charging: "Заряд", discharging: "Разряд", idle: "Покой",
     output_priority: "Приоритет питания", charge_priority: "Источник заряда",
@@ -114,6 +142,7 @@ const I18N = {
     },
   },
   uk: {
+    update_available: "Картку оновлено. Перезавантажте сторінку.", reload: "Перезавантажити",
     solar: "Сонце", grid: "Мережа", battery: "АКБ", home: "Дім",
     no_grid: "Немає мережі", charging: "Заряд", discharging: "Розряд", idle: "Спокій",
     output_priority: "Пріоритет живлення", charge_priority: "Джерело заряду",
@@ -280,6 +309,11 @@ const STYLE = `
   .icon-btn:focus-visible { outline:2px solid var(--primary-color); }
   .icon-btn ha-icon { --mdc-icon-size:20px; color:var(--eb-muted); }
   .warn { padding:12px; color:var(--error-color,#db4437); }
+  .update { display:flex; align-items:center; gap:10px; margin:-4px 0 12px; padding:8px 8px 8px 12px; border-radius:12px;
+            font-size:13px; background:color-mix(in srgb,var(--primary-color) 12%,transparent); color:var(--primary-text-color); }
+  .update span { flex:1; }
+  .update button { all:unset; cursor:pointer; font-weight:600; color:var(--primary-color); padding:6px 10px; border-radius:8px; }
+  .update button:hover { background:color-mix(in srgb,var(--primary-color) 12%,transparent); }
 
   .backdrop { position:fixed; inset:0; z-index:9; background:rgba(0,0,0,.45); display:flex;
               align-items:center; justify-content:center; padding:16px; box-sizing:border-box; }
@@ -382,7 +416,10 @@ class EyeBondInverterCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const reconnected = this._wasConnected === false && hass?.connected === true;
+    this._wasConnected = hass?.connected;
     this._hass = hass;
+    this._maybeCheckVersion(reconnected);
     // Native controls (select pop-ups, number spinners) follow the HA theme too.
     if (this.getAttribute("data-theme") === "auto") {
       this.style.colorScheme = hass?.themes?.darkMode ? "dark" : "light";
@@ -391,6 +428,46 @@ class EyeBondInverterCard extends HTMLElement {
   }
 
   getCardSize() { return 7; }
+
+  // ---------------------------------------------------------------- updates
+  _maybeCheckVersion(force) {
+    if (!LOADED_VERSION || !this._hass?.callApi || this._serverVersion === undefined && this._checking) return;
+    const first = this._serverVersion === undefined;
+    const stale = Date.now() - versionCheck.lastAt > VERSION_CHECK_EVERY_MS;
+    if (!force && !first && !stale) return;
+    if (!force && first && Date.now() - versionCheck.lastAt < 30000 && versionCheck.lastVersion !== undefined) {
+      this._onServerVersion(versionCheck.lastVersion);
+      return;
+    }
+    this._checking = true;
+    versionCheck.fetch(this._hass).then((v) => {
+      this._checking = false;
+      versionCheck.lastVersion = v;
+      this._onServerVersion(v);
+    });
+  }
+
+  _onServerVersion(version) {
+    this._serverVersion = version;
+    if (!version || version === LOADED_VERSION) { this._setUpdateBanner(false); return; }
+    if (this._config?.auto_reload !== false) {
+      const key = `eybond-inverter-card-reloaded-${version}`;
+      try {
+        if (!window.sessionStorage.getItem(key)) {
+          window.sessionStorage.setItem(key, "1");
+          // Reload only if the marker really stuck, otherwise we could loop.
+          if (window.sessionStorage.getItem(key) === "1") { window.location.reload(); return; }
+        }
+      } catch (_e) { /* storage blocked: fall through to the banner */ }
+    }
+    this._setUpdateBanner(true);
+  }
+
+  _setUpdateBanner(show) {
+    this._updateAvailable = show;
+    const el = this.shadowRoot?.querySelector("[data-update]");
+    if (el) el.hidden = !show;
+  }
   getGridOptions() { return { columns: 12, min_columns: 6, rows: "auto" }; }
 
   disconnectedCallback() { this._closeDialog(); }
@@ -499,6 +576,9 @@ class EyeBondInverterCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `<style>${STYLE}</style>
       <ha-card>
+        <div class="update" data-update ${this._updateAvailable ? "" : "hidden"}>
+          <span>${t.update_available}</span><button data-reload>${t.reload}</button>
+        </div>
         <div class="hdr">
           <div class="title" data-title></div>
           <div class="chips">
@@ -543,6 +623,7 @@ class EyeBondInverterCard extends HTMLElement {
     root.querySelectorAll("[data-open]").forEach((el) =>
       el.addEventListener("click", () => this._openDialog(el.dataset.open)));
     this._wireSegments(root);
+    root.querySelector("[data-reload]").addEventListener("click", () => window.location.reload());
 
     this._built = true;
     this._builtLang = t;

@@ -64,6 +64,11 @@ from .integration_metadata import (
     _text_unique_id,
     _tool_unique_id,
 )
+from .frontend import (
+    async_ensure_card_resource,
+    async_remove_card_resource_if_last,
+    async_setup_card,
+)
 from .integration_migration import _ENTRY_SCHEMA_VERSION, async_migrate_entry
 from .integration_registration import (
     _is_transient_listener_bind_error,
@@ -94,7 +99,6 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
     from .services import async_setup_services
     from .support.download import async_register_download_views
     from .passive_discovery import async_start_passive_callback_discovery
-    from .frontend import async_register_card
 
     domain_data = hass.data.setdefault(DOMAIN, {})
     domain_data[_COMPONENT_SETUP_COMPLETE_KEY] = False
@@ -137,7 +141,7 @@ async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
         remove_component_listener()
         logger.exception("Failed to initialize EyeBond Local integration bootstrap")
         raise
-    await async_register_card(hass)
+    await async_setup_card(hass)
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -204,6 +208,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator.async_sync_device_registry()
         entry.async_on_unload(entry.add_update_listener(_async_update_listener))
         await _async_ensure_listener_entry(hass)
+        await async_ensure_card_resource(hass)
     except CollectorListenerBindError as exc:
         if coordinator is not None:
             try:
@@ -277,6 +282,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Finalize the exact owned collector session and remove entry evidence."""
+
+    # Runs before the early returns below: removing the listener entry is how
+    # the user disables the integration completely, and must drop the card too.
+    await async_remove_card_resource_if_last(hass, excluding_entry_id=entry.entry_id)
 
     if str(entry.data.get(CONF_ENTRY_ROLE) or "") == ENTRY_ROLE_LISTENER:
         # Removing this explicit service entry is how the user disables the
