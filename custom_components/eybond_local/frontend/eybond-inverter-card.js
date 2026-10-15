@@ -6,12 +6,14 @@
  *   device: pi30_6200        # optional, object-id prefix; auto-detected
  *   title: Инвертор          # optional
  *   show_controls: true      # optional
+ *   animation: auto          # auto | always | off — auto follows the OS
+ *                            # "reduce motion" setting
  *
  * Vanilla JS, no dependencies. Every value comes from the integration's
  * entities; the card only calls select / number / switch services.
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.1";
 const INTEGRATION = "eybond_local";
 
 const I18N = {
@@ -263,10 +265,12 @@ const STYLE = `
   .kv span:last-child { font-variant-numeric:tabular-nums; color:var(--primary-text-color); text-align:right; }
   .kv span:first-child { color:var(--eb-muted); }
 
+  :host([data-anim="off"]) .flow .dash { animation:none; stroke-dasharray:none; opacity:0; }
+  :host([data-anim="off"]) .flow .dash.on { opacity:.55; }
   @media (prefers-reduced-motion: reduce) {
-    .flow .dash { animation:none; stroke-dasharray:none; opacity:0; }
-    .flow .dash.on { opacity:.55; }
-    .seg button.pending { animation:none; opacity:.6; }
+    :host(:not([data-anim="always"])) .flow .dash { animation:none; stroke-dasharray:none; opacity:0; }
+    :host(:not([data-anim="always"])) .flow .dash.on { opacity:.55; }
+    :host(:not([data-anim="always"])) .seg button.pending { animation:none; opacity:.6; }
   }
 `;
 
@@ -301,7 +305,9 @@ class EyeBondInverterCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { show_controls: true, ...(config || {}) };
+    this._config = { show_controls: true, animation: "auto", ...(config || {}) };
+    const anim = ["always", "off"].includes(this._config.animation) ? this._config.animation : "auto";
+    this.setAttribute("data-anim", anim);
     this._prefix = this._config.device || null;
     this._built = false;
     this._pending = {};
