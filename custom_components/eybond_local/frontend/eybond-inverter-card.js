@@ -20,7 +20,7 @@
  * entities; the card only calls select / number / switch services.
  */
 
-const CARD_VERSION = "0.3.1";
+const CARD_VERSION = "0.3.2";
 
 // Hash the integration put in our URL (?v=…); null when loaded some other way.
 const LOADED_VERSION = (() => {
@@ -74,7 +74,7 @@ const I18N = {
     out_hint: { "Utility first": "Grid → Solar → Battery", "Solar first": "Solar → Grid → Battery", "SBU first": "Solar → Battery → Grid" },
     out_label: { "Utility first": "Grid", "Solar first": "Solar", "SBU first": "SBU" },
     chg_label: { "Utility first": "Grid first", "Solar first": "Solar first", "Solar + Utility": "Solar + grid", "Only solar charging permitted": "Solar only" },
-    modes: { "Power on": "Starting", "Standby": "Standby", "Line": "On grid", "Battery": "On battery", "Fault": "Fault", "Power saving": "Power saving" },
+    modes: { "Power on": "Starting", "Standby": "Standby", "Line": "Grid connected", "Battery": "On battery", "Fault": "Fault", "Power saving": "Power saving" },
     switches: {
       buzzer_enabled: "Buzzer", lcd_backlight_enabled: "LCD backlight", power_saving_enabled: "Power saving",
       overload_bypass_enabled: "Overload bypass", overload_restart_enabled: "Restart after overload",
@@ -120,7 +120,7 @@ const I18N = {
     out_hint: { "Utility first": "Сеть → Солнце → АКБ", "Solar first": "Солнце → Сеть → АКБ", "SBU first": "Солнце → АКБ → Сеть" },
     out_label: { "Utility first": "Сеть", "Solar first": "Солнце", "SBU first": "SBU" },
     chg_label: { "Utility first": "Сначала сеть", "Solar first": "Сначала солнце", "Solar + Utility": "Солнце + сеть", "Only solar charging permitted": "Только солнце" },
-    modes: { "Power on": "Запуск", "Standby": "Ожидание", "Line": "От сети", "Battery": "От АКБ", "Fault": "Авария", "Power saving": "Энергосбережение" },
+    modes: { "Power on": "Запуск", "Standby": "Ожидание", "Line": "Сеть подключена", "Battery": "От АКБ", "Fault": "Авария", "Power saving": "Энергосбережение" },
     switches: {
       buzzer_enabled: "Звуковой сигнал", lcd_backlight_enabled: "Подсветка дисплея", power_saving_enabled: "Энергосбережение",
       overload_bypass_enabled: "Байпас при перегрузке", overload_restart_enabled: "Перезапуск после перегрузки",
@@ -183,7 +183,7 @@ const I18N = {
     out_hint: { "Utility first": "Мережа → Сонце → АКБ", "Solar first": "Сонце → Мережа → АКБ", "SBU first": "Сонце → АКБ → Мережа" },
     out_label: { "Utility first": "Мережа", "Solar first": "Сонце", "SBU first": "SBU" },
     chg_label: { "Utility first": "Спершу мережа", "Solar first": "Спершу сонце", "Solar + Utility": "Сонце + мережа", "Only solar charging permitted": "Лише сонце" },
-    modes: { "Power on": "Запуск", "Standby": "Очікування", "Line": "Від мережі", "Battery": "Від АКБ", "Fault": "Аварія", "Power saving": "Енергозбереження" },
+    modes: { "Power on": "Запуск", "Standby": "Очікування", "Line": "Мережа підключена", "Battery": "Від АКБ", "Fault": "Аварія", "Power saving": "Енергозбереження" },
     switches: {
       buzzer_enabled: "Звуковий сигнал", lcd_backlight_enabled: "Підсвітка дисплея", power_saving_enabled: "Енергозбереження",
       overload_bypass_enabled: "Байпас при перевантаженні", overload_restart_enabled: "Перезапуск після перевантаження",
@@ -771,7 +771,9 @@ class EyeBondInverterCard extends HTMLElement {
 
     this._setNode("pv", pv !== null && pv > FLOW_W, this._w(pv), `${this._val("pv_voltage", 0)}`);
     this._setNode(
-      "grid", gridOk && (gridIn > FLOW_W || gridOut > FLOW_W),
+      // Coloured whenever the grid is present, even at 0 W (solar covering the
+      // load); grey with a crossed tower only when the grid is actually lost.
+      "grid", gridOk,
       gridOk ? this._w(gridOut > gridIn ? gridOut : gridIn) : "—",
       gridOk ? `${this._val("grid_voltage", 0)} · ${this._val("grid_frequency", 1)}` : t.no_grid,
     );
