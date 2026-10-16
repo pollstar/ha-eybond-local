@@ -1,5 +1,6 @@
 /*
  * EyeBond Inverter Card — Lovelace card for EyeBond Local hybrid inverters.
+ * Author: Pavel Starovoitov (@pollstar), https://github.com/pollstar/ha-eybond-local
  *
  * Served by the eybond_local integration, which also keeps the dashboard
  * resource /eybond_local_static/eybond-inverter-card.js?v=<hash> current —
@@ -1236,7 +1237,11 @@ class EyeBondInverterCard extends HTMLElement {
       `<div class="h-col" data-i="${i}"><div class="h-bar" style="height:${max ? (v / max) * 100 : 0}%"></div></div>`).join("");
     const total = upMax + downMax || 1;
     const H = 168;
-    const upH = Math.round((H * upMax) / total);
+    // Each half keeps room for its axis label, however lopsided the values.
+    const MIN_HALF = 36;
+    const upH = down
+      ? Math.min(H - MIN_HALF, Math.max(MIN_HALF, Math.round((H * upMax) / total)))
+      : H;
     const yFmt = (v) => this._fmt(v, v < 1 ? 2 : v < 10 ? 1 : 0);
     const plotH = down ? H : upH;
     const yLabels = [

@@ -5,7 +5,7 @@
 
 [English](README.md)
 
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=groove-max&repository=ha-eybond-local&category=integration)
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=pollstar&repository=ha-eybond-local&category=integration)
 
 > Кнопка **Open in HACS** працює лише тоді, коли HACS уже встановлено. HACS не
 > є обов’язковим — без нього скористайтеся ручним встановленням нижче.
@@ -23,6 +23,81 @@
 > **Примітка:** Інтеграція активно розвивається. Частина інверторів підтримується повністю, частина — лише для читання, а для частини потрібен архів підтримки.
 
 > **Відома проблема:** На деяких системах оновлення в хмарі виробника можуть зупинятися, хоча показання Home Assistant продовжують змінюватися. Ми досліджуємо це; подробиці — у [розділі про хмарну телеметрію](#відома-проблема-хмарної-телеметрії).
+
+---
+
+## Про цей форк
+
+Це **pollstar/ha-eybond-local** — форк
+[groove-max/ha-eybond-local](https://github.com/groove-max/ha-eybond-local),
+який підтримує **Павло Старовойтов ([@pollstar](https://github.com/pollstar))**.
+У ньому все з оригінальної інтеграції плюс вбудована картка для дашборду,
+розроблена й перевірена на інверторі PowMr 6,2 кВт (PI30) зі штатним Wi-Fi
+модулем SmartESS. Зміни планується запропонувати в основний репозиторій.
+
+### Що додає форк
+
+- **Вбудована картка** `custom:eybond-inverter-card` — нічого не треба
+  завантажувати окремо чи прописувати в ресурсах: інтеграція реєструє картку
+  сама й версіонує за хешем вмісту, тож оновлення доходять до кожного браузера.
+- **Потік енергії наживо** між сонцем, мережею, АКБ і домом з анімацією
+  напрямку, кільцем заряду АКБ, наявністю мережі, режимом роботи та
+  перекладеними тривогами.
+- **Керування в один дотик** — пріоритет живлення прямо на картці; джерело та
+  струми заряду, тип і напруги АКБ, діапазон входу AC і перемикачі інвертора —
+  у вікні «Налаштування», з індикацією очікування, доки інвертор не підтвердить
+  нове значення.
+- **Історія енергії** — натисніть Сонце, Мережу, АКБ або Дім: кВт·год по
+  годинах (день), по днях (місяць) і по місяцях (рік) з довгострокової
+  статистики Home Assistant.
+- **Куди пішла енергія** — розподіл за сьогодні: куди пішло сонце, чим
+  живився дім і чим заряджалася АКБ.
+- **Світла й темна тема**, мова **англійська, українська чи російська** — за
+  мовою інтерфейсу Home Assistant (типово англійська).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/card-light-uk.png" alt="Картка інвертора, світла тема" width="380">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/card-dark-uk.png" alt="Картка інвертора, темна тема, мережі немає" width="380">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/history-pv-day-uk.png" alt="Вироблення сонця по годинах" width="380">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/history-batt-day-uk.png" alt="Заряд і розряд АКБ по годинах" width="380">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/stats-uk.png" alt="Статистика з розподілом енергії за сьогодні" width="380">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/settings-uk.png" alt="Вікно налаштувань" width="380">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/history-home-year-uk.png" alt="Споживання дому по місяцях" width="380">
+</p>
+
+### Встановлення форку через HACS
+
+1. HACS → ⋮ → **Custom repositories** → додайте
+   `https://github.com/pollstar/ha-eybond-local`, категорія **Integration**.
+2. Завантажте **EyeBond Local** і виберіть гілку `powmr-card`.
+3. Перезапустіть Home Assistant і додайте картку на дашборд:
+   `type: custom:eybond-inverter-card`.
+
+Якщо оригінальна інтеграція вже встановлена, спершу видаліть її з HACS
+(запис інтеграції в Налаштування → Пристрої та служби не чіпайте): домен той
+самий, тож сутності й налаштування збережуться.
+
+Параметри картки:
+
+```yaml
+type: custom:eybond-inverter-card
+# усі необов'язкові:
+device: pi30_6200      # префікс entity_id; визначається автоматично
+title: Інвертор
+theme: auto            # auto | light | dark
+animation: auto        # auto (за системним «зменшити рух») | always | off
+show_controls: true
+auto_reload: true      # перезавантажити відкриті сторінки після оновлення
+```
 
 ---
 

@@ -5,7 +5,7 @@
 
 [Українською](README.uk.md)
 
-[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=groove-max&repository=ha-eybond-local&category=integration)
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=pollstar&repository=ha-eybond-local&category=integration)
 
 > The **Open in HACS** button requires HACS to be installed. HACS is optional;
 > if you do not use it, follow the manual installation steps below.
@@ -23,6 +23,69 @@ It reads live inverter data over your local network. On supported models it can 
 > **Note:** The integration is actively developed. Some inverters work fully, some work in read-only mode, and some need a Support Archive before support can be added.
 
 > **Known issue:** On some setups, vendor-cloud updates can pause while Home Assistant readings continue. This is under investigation; see [Known cloud telemetry issue](#known-cloud-telemetry-issue).
+
+---
+
+## About this fork
+
+This is **pollstar/ha-eybond-local**, a fork of
+[groove-max/ha-eybond-local](https://github.com/groove-max/ha-eybond-local)
+maintained by **Pavel Starovoitov ([@pollstar](https://github.com/pollstar))**.
+It contains everything from the original integration plus a built-in dashboard
+card, developed and tested on a PowMr 6.2 kW (PI30) inverter with a stock
+SmartESS Wi-Fi dongle. Changes made here are intended to be offered upstream.
+
+### What the fork adds
+
+- **Built-in dashboard card** `custom:eybond-inverter-card` — no separate
+  download, no manual resource: the integration registers it itself and keeps
+  it versioned by content hash, so updates reach every browser.
+- **Live power flow** between solar, grid, battery and home with animated
+  direction, battery ring, grid presence, operating mode and translated alarms.
+- **Control in one tap** — output source priority right on the card; charge
+  source, charge currents, battery type and voltages, AC input range and
+  inverter switches in the Settings dialog, with a pending state until the
+  inverter confirms the new value.
+- **Energy history** — tap Solar, Grid, Battery or Home for kWh per hour
+  (day), per day (month) and per month (year), built from Home Assistant
+  long-term statistics.
+- **Where the energy went** — today's split: where the solar went, what
+  powered the home and what charged the battery.
+- **Light and dark theme**, **English, Ukrainian and Russian** chosen from
+  the Home Assistant UI language (English by default).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/card-light-en.png" alt="Inverter card, light theme" width="380">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/card-dark-en.png" alt="Inverter card, dark theme, grid lost" width="380">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/history-pv-day-en.png" alt="Solar production per hour" width="380">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/history-batt-day-en.png" alt="Battery charge and discharge per hour" width="380">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/stats-en.png" alt="Statistics with today's energy split" width="380">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/settings-en.png" alt="Settings dialog" width="380">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/pollstar/ha-eybond-local/powmr-card/docs/images/fork/history-home-year-en.png" alt="Home consumption per month" width="380">
+</p>
+
+Card options are described in [Dashboard card](#dashboard-card).
+
+### Install the fork with HACS
+
+1. HACS → ⋮ → **Custom repositories** → add
+   `https://github.com/pollstar/ha-eybond-local`, category **Integration**.
+2. Download **EyeBond Local** and pick the `powmr-card` branch.
+3. Restart Home Assistant, then add the card to a dashboard:
+   `type: custom:eybond-inverter-card`.
+
+If the original integration is already installed, remove it from HACS first
+(keep the integration entry in Settings → Devices & services): the domain is
+the same, so entities and settings are kept.
 
 ---
 
@@ -278,7 +341,9 @@ mode, and the difference between unavailable and disabled entities.
 EyeBond Local ships its own Lovelace card, `custom:eybond-inverter-card`:
 power flow between solar, grid, battery and home, battery state, mode and
 alarms, output priority, a settings dialog for the inverter's verified
-controls and today's energy statistics.
+controls, today's energy statistics with a breakdown of where the energy went,
+and per-node energy history (tap Solar, Grid, Battery or Home) by day, month
+and year from Home Assistant long-term statistics.
 
 ```yaml
 type: custom:eybond-inverter-card

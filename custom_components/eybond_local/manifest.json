@@ -6,18 +6,19 @@
     "lovelace"
   ],
   "codeowners": [
-    "@groove-max"
+    "@groove-max",
+    "@pollstar"
   ],
   "config_flow": true,
   "dependencies": [
     "http"
   ],
-  "documentation": "https://github.com/groove-max/ha-eybond-local",
+  "documentation": "https://github.com/pollstar/ha-eybond-local",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/groove-max/ha-eybond-local/issues",
+  "issue_tracker": "https://github.com/pollstar/ha-eybond-local/issues",
   "requirements": [
     "bleak>=0.22.3"
   ],
-  "version": "0.3.0-beta.5"
+  "version": "0.3.0-beta.5-pollstar.1"
 }

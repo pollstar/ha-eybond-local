@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is inspired by Keep a Changelog, with one practical rule for this repository:
 the GitHub release body should be rendered from the matching version section here.
 
+## [0.3.0-beta.5-pollstar.1] — fork pollstar/ha-eybond-local
+
+Fork by Pavel Starovoitov (@pollstar), based on upstream 0.3.0-beta.5.
+
+### Added
+
+- Built-in Lovelace card `custom:eybond-inverter-card`, served and registered
+  as a dashboard resource by the integration, versioned by content hash.
+- Live power flow (solar, grid, battery, home), battery ring, grid presence,
+  operating mode and translated PI30 alarms.
+- Output priority on the card; Settings dialog for charge source, charge
+  currents, battery type and voltages, AC input range and inverter switches.
+- Energy history per flow node by day (hourly), month (daily) and year
+  (monthly) from Home Assistant long-term statistics.
+- Today's energy split: where the solar went, what powered the home and what
+  charged the battery.
+- Light/dark theme and English, Ukrainian and Russian UI.
+
+### Changed
+
+- `frontend` and `lovelace` are `after_dependencies` instead of a hard
+  dependency, so the integration still loads where the frontend is absent.
+
 ## [Unreleased]
 
 ### Added
