@@ -329,7 +329,7 @@ class Pi30DriverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inverter.profile_name, "pi30_ascii/models/vmii_nxpw5kw.json")
         self.assertEqual(inverter.register_schema_name, "pi30_ascii/models/vmii_nxpw5kw.json")
 
-    async def test_yingfa_6200_support_archive_replays_as_pi30_max(self) -> None:
+    async def test_yingfa_6200_support_archive_replays_as_hvm6200_max(self) -> None:
         driver = Pi30Driver()
         target = ProbeTarget(devcode=0x0994, collector_addr=0xFF, device_addr=0)
         transport = _FakeTransport(
@@ -357,9 +357,10 @@ class Pi30DriverTests(unittest.IsolatedAsyncioTestCase):
         inverter = await driver.async_probe(transport, target)
 
         assert inverter is not None
-        self.assertEqual(inverter.model_name, "PI30 6200")
-        self.assertEqual(inverter.variant_key, "pi30_max")
-        self.assertEqual(inverter.profile_name, "pi30_ascii/models/pi30_max.json")
+        # Same QMN, rating, 28-field QPIRI and firmware as POW-HVM6.2M-48V-N.
+        self.assertEqual(inverter.model_name, "PI30 VMII-NXPW5KW 6200")
+        self.assertEqual(inverter.variant_key, "pi30_max_hvm6200")
+        self.assertEqual(inverter.profile_name, "pi30_ascii/models/powmr_hvm6200.json")
         self.assertEqual(inverter.register_schema_name, "pi30_ascii/models/pi30_max.json")
         self.assertEqual(inverter.details["output_rating_active_power"], 6200)
 
@@ -368,6 +369,63 @@ class Pi30DriverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(values["output_active_power"], 210)
         self.assertEqual(values["battery_voltage"], 1.6)
         self.assertEqual(values["pv_input_voltage"], 336.9)
+
+    async def test_powmr_hvm6200_offers_only_menu16_charge_sources(self) -> None:
+        """POW-HVM6.2M-48V-N live replies; menu 16 has CSO/SNU/OSO but no CUt."""
+        driver = Pi30Driver()
+        target = ProbeTarget(devcode=0x0994, collector_addr=0xFF, device_addr=0)
+        replies = {
+            "QPI": "PI30",
+            "QID": "92932501102544",
+            "QMN": "VMII-NXPW5KW",
+            "QPIRI": (
+                "230.0 26.9 230.0 50.0 26.9 6200 6200 48.0 51.0 48.0 "
+                "57.4 57.4 2 020 100 0 1 2 1 01 0 0 53.0 0 1 51.0 02 44.0"
+            ),
+            "QFLAG": "ExzDabjkuvygld",
+            "QMOD": "L",
+            "QVFW": "VERFW:00074.09",
+            "QVFW2": "VERFW2:00000.00",
+        }
+        transport = _FakeTransport(
+            {(target.devcode, target.collector_addr, k): v for k, v in replies.items()}
+        )
+
+        inverter = await driver.async_probe(transport, target)
+
+        assert inverter is not None
+        self.assertEqual(inverter.variant_key, "pi30_max_hvm6200")
+        self.assertEqual(inverter.profile_name, "pi30_ascii/models/powmr_hvm6200.json")
+        self.assertIn("QMN", transport.commands)
+        capability = {cap.key: cap for cap in inverter.capabilities}["charger_source_priority"]
+        self.assertEqual(
+            capability.enum_map,
+            {1: "Solar first", 2: "Solar + Utility", 3: "Only solar charging permitted"},
+        )
+        self.assertEqual(inverter.details["charger_source_priority"], "Solar + Utility")
+
+    async def test_pi30_max_without_vmii_model_keeps_utility_first(self) -> None:
+        driver = Pi30Driver()
+        target = ProbeTarget(devcode=0x0994, collector_addr=0xFF, device_addr=0)
+        replies = {
+            "QPI": "PI30",
+            "QMN": "NAK",
+            "QFLAG": "ExzDabjkuvygld",
+            "QPIRI": (
+                "230.0 26.9 230.0 50.0 26.9 6200 6200 48.0 51.0 48.0 "
+                "57.4 57.4 2 020 100 0 1 2 1 01 0 0 53.0 0 1 51.0 02 44.0"
+            ),
+        }
+        transport = _FakeTransport(
+            {(target.devcode, target.collector_addr, k): v for k, v in replies.items()}
+        )
+
+        inverter = await driver.async_probe(transport, target)
+
+        assert inverter is not None
+        self.assertEqual(inverter.variant_key, "pi30_max")
+        capability = {cap.key: cap for cap in inverter.capabilities}["charger_source_priority"]
+        self.assertEqual(capability.enum_map[0], "Utility first")
 
     async def test_probe_selects_vmii_model_overlay_when_model_number_matches(self) -> None:
         driver = Pi30Driver()

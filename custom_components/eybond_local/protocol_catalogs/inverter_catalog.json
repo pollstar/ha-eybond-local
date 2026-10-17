@@ -1720,6 +1720,17 @@
    "support_capture_policy": "pi_ascii"
   },
   {
+   "key": "pi30_max_powmr_hvm6200_full",
+   "protocol_key": "pi30",
+   "driver_key": "pi30",
+   "variant_key": "pi30_max_hvm6200",
+   "profile_name": "pi30_ascii/models/powmr_hvm6200.json",
+   "register_schema_name": "pi30_ascii/models/pi30_max.json",
+   "tier": "full",
+   "read_only": false,
+   "support_capture_policy": "pi_ascii"
+  },
+  {
    "key": "pi30_max_full",
    "protocol_key": "pi30",
    "driver_key": "pi30",
@@ -2762,6 +2773,25 @@
      "catalog-migration:pi_family.pi41"
     ],
     "confidence": "rule-migrated"
+   }
+  },
+  {
+   "entry_key": "pi30_max_powmr_hvm6200",
+   "surface_key": "pi30_max_powmr_hvm6200_full",
+   "model_name": "PI30 VMII-NXPW5KW 6200",
+   "priority": 230,
+   "anchors": [
+    {"key": "protocol.protocol_id", "equals": "PI30"},
+    {"key": "identity.model_number", "equals": "VMII-NXPW5KW"},
+    {"key": "identity.rated_power", "equals": 6200},
+    {"key": "shape.capability_flags", "contains_any": ["d"]}
+   ],
+   "provenance": {
+    "sources": [
+     "live capture: POW-HVM6.2M-48V-N, QMN VMII-NXPW5KW, QVFW 00074.09, 28-field QPIRI, QFLAG with d",
+     "owner report: LCD menu 16 has no CUt (utility first)"
+    ],
+    "confidence": "capture-derived"
    }
   },
   {

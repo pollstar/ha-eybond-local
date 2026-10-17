@@ -77,6 +77,7 @@ Runtime descriptors with no specific commercial model record. These are generic 
 | `modbus_smg.protocol_6_family_fallback` | modbus_smg | smg_protocol_6_family_fallback | full | no |
 | `pi18_family` | pi18 | pi18_read_only | partial | yes |
 | `pi30_family` | pi30 | pi30_default_full | full | no |
+| `pi30_max_powmr_hvm6200` | pi30 | pi30_max_powmr_hvm6200_full | full | no |
 | `pi30_max_qflag` | pi30 | pi30_max_full | full | no |
 | `pi30_pip_gk` | pi30 | pi30_pip_gk_full | full | no |
 | `pi30_smartess_0925_compatible` | pi30 | pi30_default_full | full | no |

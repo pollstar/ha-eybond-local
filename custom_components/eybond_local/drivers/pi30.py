@@ -684,7 +684,7 @@ async def _async_resolve_pi30_serial_identity(
     # QSID is a PI30 MAX extension for serials longer than 14 characters. It is
     # queried only when QID did not cross the trust boundary, avoiding an extra
     # timeout for the normal PI30 path.
-    if variant_key == "pi30_max":
+    if variant_key in {"pi30_max", "pi30_max_hvm6200"}:
         qsid_payload = await _async_request_pi30_serial(session, command="QSID")
         if qsid_payload:
             try:

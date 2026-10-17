@@ -1,0 +1,18 @@
+{
+  "extends": "./pi30_max.json",
+  "profile_key": "pi30_ascii_powmr_hvm6200",
+  "title": "PI30 MAX / ASCII PowMr POW-HVM6.2M-48V-N Profile",
+  "driver_key": "pi30",
+  "protocol_family": "pi30",
+  "capabilities": [
+    {
+      "key": "charger_source_priority",
+      "note": "POW-HVM6.2M-48V-N menu 16 offers only CSO, SNU and OSO; there is no CUt, so PCP00 (utility first) is not offered. Confirmed on a live unit: LCD SNU reads back as QPIRI 2 and CSO as QPIRI 1.",
+      "enum_map": {
+        "1": "Solar first",
+        "2": "Solar + Utility",
+        "3": "Only solar charging permitted"
+      }
+    }
+  ]
+}
