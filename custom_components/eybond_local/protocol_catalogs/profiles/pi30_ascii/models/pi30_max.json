@@ -6,15 +6,6 @@
   "protocol_family": "pi30",
   "capabilities": [
     {
-      "key": "charger_source_priority",
-      "note": "PI30 MAX / VMII menu 16 offers only CSO, SNU and OSO; PCP00 (utility first, CUt) is not available. Confirmed on PowMr POW-HVM6.2M-48V-N (no CUt in menu 16; LCD SNU reads back as QPIRI 2).",
-      "enum_map": {
-        "1": "Solar first",
-        "2": "Solar + Utility",
-        "3": "Only solar charging permitted"
-      }
-    },
-    {
       "key": "max_charging_current",
       "register": 0,
       "value_kind": "enum",
