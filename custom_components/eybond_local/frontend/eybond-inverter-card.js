@@ -21,7 +21,7 @@
  * entities; the card only calls select / number / switch services.
  */
 
-const CARD_VERSION = "0.3.3";
+const CARD_VERSION = "0.3.4";
 
 // Hash the integration put in our URL (?v=…); null when loaded some other way.
 const LOADED_VERSION = (() => {
@@ -854,6 +854,7 @@ class EyeBondInverterCard extends HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "backdrop";
     const node = kind.startsWith("history:") ? kind.slice(8) : null;
+    this._sp = null; // statistics period state belongs to one open dialog
     const title = node ? t.h_title[node] : kind === "settings" ? t.settings : t.stats;
     const body = node ? this._historyHtml(node) : kind === "settings" ? this._settingsHtml() : this._statsHtml();
     wrap.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" aria-label="${title}">
@@ -974,7 +975,16 @@ class EyeBondInverterCard extends HTMLElement {
       ? `<div class="sec" data-flows>${["pv", "home", "batt"].map((f) => `<div class="flowbar" data-flow="${f}"></div>`).join("")}
           ${this._st("sensor", "grid_voltage") && !this._st("sensor", "grid_power") ? `<div class="fb-note">${t.f_grid_note}</div>` : ""}</div>`
       : "";
-    return `<div class="sec"><h3>${t.today}</h3><div class="tiles">${tiles}</div></div>
+    return `<div class="h-head">
+        <div class="seg" data-speriod>${["day", "month", "year"]
+          .map((p) => `<button data-p="${p}">${t.h_period[p]}</button>`).join("")}</div>
+        <div class="h-nav">
+          <button data-sstep="-1" aria-label="${t.h_prev}"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+          <span data-slabel></span>
+          <button data-sstep="1" aria-label="${t.h_next}"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+        </div>
+      </div>
+      <div class="sec"><div class="tiles">${tiles}</div></div>
       ${flows}
       <div class="sec"><h3>${t.now}</h3>${kv}
         <div class="kv" data-info="sensor:model"><span>${t.model}</span><span data-model></span></div></div>`;
@@ -983,8 +993,8 @@ class EyeBondInverterCard extends HTMLElement {
   // Today's energy routes, from the integration's split kWh sensors. Routes the
   // integration does not expose (PV->battery, grid->battery) are the remainder
   // of their source total, clamped at zero.
-  _energyFlows() {
-    const v = (k) => this._num(`estimated_${k}_energy_today`);
+  _energyFlows(get = (key) => this._statEnergy(key)) {
+    const v = (k) => get(`estimated_${k}_energy_today`);
     const pvToHome = v("pv_to_home"), battToHome = v("battery_to_home"), gridToHome = v("grid_to_home");
     if (pvToHome === null || battToHome === null || gridToHome === null) return null;
     const pv = v("pv") || 0, gridIn = v("grid_import") || 0, gridOut = v("grid_export") || 0;
@@ -1003,7 +1013,10 @@ class EyeBondInverterCard extends HTMLElement {
 
   _renderFlows(el) {
     const flows = this._energyFlows();
-    if (!flows) return;
+    if (!flows) {
+      el.querySelectorAll("[data-flow]").forEach((box) => { box._html = ""; box.innerHTML = ""; });
+      return;
+    }
     const t = this._t;
     const name = { pv: t.solar, batt: t.battery, grid: t.grid, home: t.home };
     el.querySelectorAll("[data-flow]").forEach((box) => {
@@ -1049,6 +1062,112 @@ class EyeBondInverterCard extends HTMLElement {
         const [domain, key] = el.dataset.info.split(":");
         this._moreInfo(this._id(domain, key));
       }));
+    this._sp = { period: "day", anchor: new Date(), req: 0, data: null, liveAt: 0 };
+    wrap.querySelector("[data-speriod]").addEventListener("click", (ev) => {
+      const b = ev.target.closest("button[data-p]");
+      if (!b || b.dataset.p === this._sp.period) return;
+      this._sp.period = b.dataset.p;
+      this._sp.anchor = new Date();
+      this._loadStatsPeriod();
+    });
+    wrap.querySelectorAll("[data-sstep]").forEach((b) => b.addEventListener("click", () => {
+      if (b.disabled) return;
+      this._sp.anchor = this._shiftPeriod(this._sp.anchor, this._sp.period, Number(b.dataset.sstep));
+      this._loadStatsPeriod();
+    }));
+    this._loadStatsPeriod();
+  }
+
+  // Energy shown in the statistics dialog for the selected period. Today is
+  // read straight from the live daily counters; any other period comes from
+  // long-term statistics (null while loading or when nothing was recorded).
+  _statsIsToday() {
+    const sp = this._sp;
+    if (!sp || sp.period !== "day") return !sp;
+    const { s, e } = this._periodRange("day", sp.anchor);
+    const now = new Date();
+    return now >= s && now < e;
+  }
+
+  _statEnergy(key) {
+    if (this._statsIsToday()) return this._num(key);
+    const d = this._sp?.data;
+    return d && key in d ? d[key] : null;
+  }
+
+  _statKeys() {
+    const keys = new Set(ENERGY_TILES.map(([k]) => k));
+    ["pv_to_home", "battery_to_home", "grid_to_home"].forEach((k) => keys.add(`estimated_${k}_energy_today`));
+    return [...keys].filter((k) => this._st("sensor", k));
+  }
+
+  async _loadStatsPeriod() {
+    const sp = this._sp;
+    const req = ++sp.req;
+    this._renderStatsFrame();
+    sp.data = null;
+    if (this._statsIsToday()) { this._updateDialog(); return; }
+    const { s, e } = this._periodRange(sp.period, sp.anchor);
+    const keys = this._statKeys();
+    const ids = keys.map((k) => this._id("sensor", k));
+    this._updateDialog();
+    try {
+      const rows = await this._hass.callWS({
+        type: "recorder/statistics_during_period",
+        start_time: s.toISOString(), end_time: e.toISOString(),
+        statistic_ids: ids, period: sp.period === "day" ? "day" : "month",
+        types: ["change"], units: { energy: "kWh" },
+      });
+      const data = {};
+      let any = false;
+      keys.forEach((k, i) => {
+        const list = rows?.[ids[i]] || [];
+        if (list.length) any = true;
+        data[k] = list.reduce((a, r) => a + (Number.isFinite(r.change) ? Math.max(0, r.change) : 0), 0);
+      });
+      // The current month/year: add what today's counters gained since the
+      // last compiled hour (long-term statistics lag up to an hour).
+      const now = new Date();
+      if (now >= s && now < e) {
+        const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
+        const today = await this._hass.callWS({
+          type: "recorder/statistics_during_period",
+          start_time: day0.toISOString(), end_time: now.toISOString(),
+          statistic_ids: ids, period: "hour", types: ["change"], units: { energy: "kWh" },
+        });
+        keys.forEach((k, i) => {
+          const live = this._num(k);
+          if (live === null) return;
+          const compiled = (today?.[ids[i]] || [])
+            .reduce((a, r) => a + (Number.isFinite(r.change) ? Math.max(0, r.change) : 0), 0);
+          if (live - compiled > 0.0005) { data[k] += live - compiled; any = true; }
+        });
+      }
+      if (req !== sp.req || this._sp !== sp || !this._dialog) return;
+      sp.data = any ? data : {};
+      sp.liveAt = Date.now();
+      this._updateDialog();
+    } catch (err) {
+      if (req !== sp.req || this._sp !== sp || !this._dialog) return;
+      sp.data = {};
+      this._updateDialog();
+      console.warn("eybond-inverter-card: statistics query failed", err);
+    }
+  }
+
+  _renderStatsFrame() {
+    const el = this._dialog?.el;
+    const sp = this._sp;
+    if (!el || !sp) return;
+    const lang = this._hass?.locale?.language || "en";
+    const { s } = this._periodRange(sp.period, sp.anchor);
+    const fmt = sp.period === "day" ? { day: "numeric", month: "long", year: "numeric", weekday: "short" }
+      : sp.period === "month" ? { month: "long", year: "numeric" } : { year: "numeric" };
+    el.querySelector("[data-slabel]").textContent = this._statsIsToday()
+      ? `${this._t.today} · ${new Intl.DateTimeFormat(lang, { day: "numeric", month: "long" }).format(s)}`
+      : new Intl.DateTimeFormat(lang, fmt).format(s);
+    el.querySelectorAll("[data-speriod] button").forEach((b) => b.classList.toggle("active", b.dataset.p === sp.period));
+    el.querySelector('[data-sstep="1"]').disabled = this._shiftPeriod(s, sp.period, 1) > new Date();
   }
 
   // ---------------------------------------------------------------- history
@@ -1349,8 +1468,14 @@ class EyeBondInverterCard extends HTMLElement {
         }
       });
     } else {
+      const sp = this._sp;
+      if (sp?.data && !this._statsIsToday() && Date.now() - sp.liveAt > 60000) {
+        const { s, e } = this._periodRange(sp.period, sp.anchor);
+        const now = new Date();
+        if (now >= s && now < e) { sp.liveAt = Date.now(); this._loadStatsPeriod(); }
+      }
       el.querySelectorAll("[data-stat]").forEach((n) => {
-        const v = this._num(n.dataset.stat);
+        const v = this._statEnergy(n.dataset.stat);
         n.textContent = v === null ? "—" : `${this._fmt(v, v < 10 ? 2 : 1)} ${this._unit("kWh")}`;
       });
       el.querySelectorAll("[data-kv]").forEach((n) => {
