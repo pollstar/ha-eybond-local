@@ -21,7 +21,7 @@
  * entities; the card only calls select / number / switch services.
  */
 
-const CARD_VERSION = "0.3.2";
+const CARD_VERSION = "0.3.3";
 
 // Hash the integration put in our URL (?v=…); null when loaded some other way.
 const LOADED_VERSION = (() => {
@@ -787,7 +787,11 @@ class EyeBondInverterCard extends HTMLElement {
       `${battState}${battP !== null && Math.abs(battP) > FLOW_W ? " " + this._w(battP) : ""} · ${this._val("battery_voltage", 1)}`);
     battNode.querySelector("[data-cap-title]").textContent = t.battery;
     const loadPct = this._num("load_percent");
-    this._setNode("home", load !== null && load > FLOW_W, this._w(load), loadPct === null ? "" : `${this._fmt(loadPct)}%`);
+    const homeSub = [
+      loadPct === null ? "" : `${this._fmt(loadPct)}%`,
+      this._num("output_voltage") === null ? "" : this._val("output_voltage", 0),
+    ].filter(Boolean).join(" · ");
+    this._setNode("home", load !== null && load > FLOW_W, this._w(load), homeSub);
     const temp = this._num("inverter_temperature");
     root.querySelector("[data-hub-cap]").textContent = temp === null ? "" : `${this._fmt(temp)} °C`;
 
