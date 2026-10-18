@@ -208,9 +208,28 @@ def _inverter_identities_conflict(current: object, candidate: object) -> bool:
         and cand_model
         and cur_model != cand_model
         and not model_names_share_catalog_identity(cur_model, cand_model)
+        and not _is_generic_label_of(cur_model, candidate)
     ):
         return True
     return False
+
+
+def _is_generic_label_of(model_name: str, candidate: object) -> bool:
+    """Whether ``model_name`` is the generic '<PROTOCOL> <rated W>' label.
+
+    PI-family entries without a more specific catalog identity are named from
+    the protocol and the rated power (e.g. 'PI30 6200'). A later catalog entry
+    may identify the same unit more precisely; that is a refinement, not a
+    different inverter, when the live probe reports the same protocol and the
+    same rated power.
+    """
+
+    family = str(getattr(candidate, "protocol_family", "") or "").strip().upper()
+    details = getattr(candidate, "details", None) or {}
+    rated = details.get("output_rating_active_power")
+    if not family or type(rated) is not int or rated <= 0:
+        return False
+    return model_name == f"{family} {rated}"
 
 
 _VOLATILE_COLLECTOR_VALUE_KEYS: frozenset[str] = frozenset(

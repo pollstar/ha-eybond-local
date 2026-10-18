@@ -85,6 +85,11 @@ def charge_current_acquisition_diagnostics(runtime_state: dict | None) -> dict:
     }
 
 
+# The full QPIRI parsed by acquisition in this cycle, for the driver's
+# settings refresh (avoids a second QPIRI on the wire). Popped every cycle.
+CYCLE_QPIRI_STATE = "pi30_cycle_qpiri"
+
+
 async def async_acquire_charge_current_controls(
     session, inverter: DetectedInverter, *, runtime_state: dict | None,
     command_timings: list[tuple[str, int, str]] | None = None,
@@ -135,6 +140,7 @@ async def async_acquire_charge_current_controls(
             return {}
         if not is_current():
             return {}
+        runtime_state[CYCLE_QPIRI_STATE] = dict(current)
         enriched = await async_enrich_charge_current_controls(
             session, current, capabilities, timeout=max(0.0, deadline - loop.time()),
             is_current=is_current,

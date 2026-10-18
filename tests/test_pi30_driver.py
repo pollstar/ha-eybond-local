@@ -763,7 +763,11 @@ class Pi30DriverTests(unittest.IsolatedAsyncioTestCase):
             transport, inverter, runtime_state=runtime_state,
             poll_interval=10.0, now_monotonic=500.0 + 100_000.0,
         )
-        self.assertEqual(transport.commands, ["QPIGS", "QMOD"])
+        # Only the rare settings refresh (QPIRI/QFLAG) may join the pair.
+        self.assertEqual(
+            [c for c in transport.commands if c not in {"QPIRI", "QFLAG"}],
+            ["QPIGS", "QMOD"],
+        )
 
         from custom_components.eybond_local.drivers.command_support import (
             clear_unsupported_commands,

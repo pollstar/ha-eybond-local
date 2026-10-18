@@ -39,6 +39,11 @@ class Pi30SettingReadbackTests(unittest.IsolatedAsyncioTestCase):
         self.inverter.capabilities = load_driver_profile("pi30_ascii.json").capabilities
         await async_acquire_charge_current_controls(_session(), self.inverter, runtime_state={})
         self.hub = _Hub(self.inverter)
+        # These tests isolate write readback; the periodic settings refresh is
+        # covered by Pi30ConfigRefreshTests below.
+        self.hub._runtime_read_state[pi30._CONFIG_REFRESH_KEY] = {
+            "inverter": self.inverter, "due": float("inf"), "failures": 0,
+        }
         self.session = _session({"MUCHGC020": "ACK", "QPIRI": QPIRI})
         self.session_patch = patch.object(pi30.Pi30Driver, "_session", return_value=self.session)
         self.session_patch.start()
@@ -118,6 +123,66 @@ class Pi30SettingReadbackTests(unittest.IsolatedAsyncioTestCase):
                                      ({}, frozenset(), {}))
                 if mode == "rebind":
                     self.inverter.capabilities += (cap,)
+
+
+class Pi30ConfigRefreshTests(unittest.IsolatedAsyncioTestCase):
+    """A binding restored without a probe must still show its settings."""
+
+    async def asyncSetUp(self):
+        self.inverter = _saved_binding()
+        self.inverter.capabilities = load_driver_profile("pi30_ascii.json").capabilities
+        await async_acquire_charge_current_controls(_session(), self.inverter, runtime_state={})
+        self.hub = _Hub(self.inverter)
+        self.session = _session({"QPIRI": QPIRI, "QFLAG": "EabxzDjkuvy"})
+        for target, attr, value in (
+            (pi30.Pi30Driver, "_session", self.session),
+        ):
+            p = patch.object(target, attr, return_value=value)
+            p.start()
+            self.addCleanup(p.stop)
+        self.now = 1000.0
+        driver = self.hub._driver
+        original = driver.async_read_values
+
+        async def read(*args, **kwargs):
+            return await original(*args, now_monotonic=self.now, **kwargs)
+
+        p = patch.object(driver, "async_read_values", new=read)
+        p.start()
+        self.addCleanup(p.stop)
+        p = patch.object(pi30, "_async_collect_runtime_values", new=AsyncMock(
+            return_value=({"operating_mode_code": "L"}, frozenset(), {})))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def _commands(self):
+        return [c.args[0] for c in self.session.request.await_args_list]
+
+    async def test_restored_binding_reads_settings_on_first_poll_then_rarely(self):
+        self.assertNotIn("output_source_priority", self.hub.values)
+        await self.hub.async_refresh()
+        self.assertEqual(self._commands(), ["QPIRI", "QFLAG"])
+        self.assertEqual(self.hub.values["max_ac_charging_current"], 10)
+        self.assertIn("output_source_priority", self.hub.values)
+        self.assertIn("charger_source_priority", self.hub.values)
+
+        self.now += 30.0
+        await self.hub.async_refresh()
+        self.assertEqual(self._commands(), ["QPIRI", "QFLAG"])
+
+        self.now += pi30._CONFIG_REFRESH_INTERVAL
+        await self.hub.async_refresh()
+        self.assertEqual(self._commands(), ["QPIRI", "QFLAG", "QPIRI", "QFLAG"])
+
+    async def test_failed_settings_read_backs_off(self):
+        self.session.request.side_effect = Pi30Error("request_timeout")
+        for _ in range(pi30._CONFIG_FAST_RETRIES):
+            await self.hub.async_refresh()
+            self.now += pi30._CONFIG_RETRY_INTERVAL
+        attempts = self.session.request.await_count
+        self.assertEqual(attempts, 2 * pi30._CONFIG_FAST_RETRIES)
+        await self.hub.async_refresh()  # now inside the long interval
+        self.assertEqual(self.session.request.await_count, attempts)
 
 
 if __name__ == "__main__":

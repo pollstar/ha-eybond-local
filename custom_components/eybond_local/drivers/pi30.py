@@ -67,6 +67,7 @@ from .command_support import (
 )
 from .read_result import DriverReadMode, DriverReadResult
 from .pi30_controls import (
+    CYCLE_QPIRI_STATE,
     async_acquire_charge_current_controls,
     async_enrich_charge_current_controls,
     charge_current_acquisition_diagnostics,
@@ -235,6 +236,73 @@ async def _async_read_pending_setting(session, inverter, runtime_state):
         "pi30_setting_readback_outcome": outcome if not missing else "unavailable",
         "pi30_setting_readback_duration_ms": int((time.monotonic() - started) * 1000),
     }
+
+
+_CONFIG_REFRESH_KEY = "pi30_config_refresh"
+# Settings live in QPIRI/QFLAG, which normal telemetry does not query. Read
+# them after a binding restored from persisted metadata (which never ran a
+# probe) and then rarely, so changes made on the inverter LCD show up too.
+_CONFIG_REFRESH_INTERVAL = 600.0
+_CONFIG_RETRY_INTERVAL = 60.0
+_CONFIG_FAST_RETRIES = 3
+
+
+async def _async_refresh_config_values(
+    session, inverter, runtime_state, *, now: float,
+    cycle_qpiri: dict[str, Any] | None = None,
+    command_timings: list[tuple[str, int, str]] | None = None,
+):
+    """Bounded QPIRI (+QFLAG) read for the settings entities.
+
+    ``cycle_qpiri`` is a QPIRI already parsed in this cycle (charge-current
+    acquisition); it is reused instead of a second request. Failures only
+    delay the next attempt; they never remove values.
+    """
+
+    if runtime_state is None or not inverter.capabilities:
+        return {}
+    state = runtime_state.get(_CONFIG_REFRESH_KEY)
+    if not isinstance(state, dict) or state.get("inverter") is not inverter:
+        # A probed binding already carries this start's QPIRI values.
+        probed = "output_rating_active_power" in (inverter.details or {})
+        state = {
+            "inverter": inverter,
+            "due": now + _CONFIG_REFRESH_INTERVAL if probed else 0.0,
+            "failures": 0,
+        }
+        runtime_state[_CONFIG_REFRESH_KEY] = state
+    if now < state["due"]:
+        return {}
+    values: dict[str, Any] = dict(cycle_qpiri or {})
+    qpiri_ok = bool(cycle_qpiri)
+    commands = [] if qpiri_ok else ["QPIRI"]
+    if any(cap.key in _PI30_BOOL_COMMANDS for cap in inverter.capabilities):
+        commands.append("QFLAG")
+    for command in commands:
+        parser = parse_qflag if command == "QFLAG" else parse_qpiri
+        started = time.monotonic()
+        outcome = "ok"
+        try:
+            values.update(parser(await asyncio.wait_for(session.request(command), timeout=3.0)))
+            qpiri_ok = qpiri_ok or command == "QPIRI"
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            outcome = "error"
+        if command_timings is not None:
+            command_timings.append(
+                (command, int(round((time.monotonic() - started) * 1000)), outcome)
+            )
+    if values:
+        values.update(_translate_config_enums(values, _schema_for_inverter(inverter, "pi30_ascii.json")))
+        _translate_capability_enum_values(values, inverter.capabilities)
+    state["failures"] = 0 if qpiri_ok else state["failures"] + 1
+    state["due"] = now + (
+        _CONFIG_RETRY_INTERVAL
+        if not qpiri_ok and state["failures"] < _CONFIG_FAST_RETRIES
+        else _CONFIG_REFRESH_INTERVAL
+    )
+    return values
 
 
 class Pi30Driver(InverterDriver):
@@ -432,6 +500,14 @@ class Pi30Driver(InverterDriver):
         if fresh_required:
             values.update(await async_acquire_charge_current_controls(
                 session, inverter, runtime_state=runtime_state, command_timings=metadata_timings,
+            ))
+        cycle_qpiri = (runtime_state or {}).pop(CYCLE_QPIRI_STATE, None)
+        if fresh_required:
+            values.update(await _async_refresh_config_values(
+                session, inverter, runtime_state,
+                now=time.monotonic() if now_monotonic is None else now_monotonic,
+                cycle_qpiri=cycle_qpiri if isinstance(cycle_qpiri, dict) else None,
+                command_timings=metadata_timings,
             ))
         setting_values, setting_removed, setting_diagnostics = await _async_read_pending_setting(
             session, inverter, runtime_state,
